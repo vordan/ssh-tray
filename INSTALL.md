@@ -1,41 +1,49 @@
-# Installation Guide - SSH Bookmark Manager
+# Installation Guide
 
-Quick installation guide for SSH Bookmark Manager.
+**Get SSH Bookmark Manager running in 2 minutes**
+
+![Installation Process](docs/images/installation-demo.png)
+*Simple one-command installation that sets up everything automatically*
 
 ---
 
-## Quick Install
-
-**One command installation:**
+## 🚀 Quick Install
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/vordan/ssh-tray/main/install.sh | bash
 ```
 
+**Then run:** `ssh-tray`
+
+![First Run](docs/images/first-run.png)
+*SSH Bookmark Manager shows helpful instructions on first startup*
+
 ---
 
-## Requirements
+## 📋 Requirements
 
-**Operating System:**
-- Linux with desktop environment (Ubuntu, Fedora, Mint, etc.)
+**System:**
+- Linux with desktop environment
+- Python 3.6+ 
+- System tray support
 
-**Dependencies:**
+**Install dependencies:**
 ```bash
-# Ubuntu/Debian
-sudo apt install python3-gi gir1.2-appindicator3-0.1 python3-gi-cairo
+# Ubuntu/Debian/Mint
+sudo apt install python3-gi gir1.2-appindicator3-0.1
 
 # Fedora
-sudo dnf install python3-gobject gtk3-devel libappindicator-gtk3-devel
+sudo dnf install python3-gobject libappindicator-gtk3-devel
 
-# Terminal (choose one)
+# Terminal (pick one)
 sudo apt install mate-terminal gnome-terminal xfce4-terminal
 ```
 
 ---
 
-## Manual Install
+## 🔧 Manual Install
 
-**Download and run:**
+**Download & run:**
 ```bash
 wget https://raw.githubusercontent.com/vordan/ssh-tray/main/install.sh
 chmod +x install.sh
@@ -51,61 +59,51 @@ cd ssh-tray
 
 ---
 
-## Usage
+## ⚡ First Run
 
-**Start the application:**
-```bash
-ssh-tray
-```
+1. **Start:** `ssh-tray`
+2. **Right-click tray icon** → "Edit bookmarks/config" 
+3. **Add your SSH servers**
+4. **Click to connect!**
 
-**Commands:**
-```bash
-ssh-tray --help      # Show help
-ssh-tray --version   # Show version
-ssh-tray --uninstall # Remove application
-```
-
-**Configure:**
-- Right-click tray icon → "Edit bookmarks/config"
-- Or edit `~/.ssh_bookmarks` and `~/.ssh_tray_config`
+![Quick Setup](docs/images/quick-setup.png)
+*Add your first bookmark in seconds with the intuitive editor*
 
 ---
 
-## Uninstall
+## 🗑️ Uninstall
 
-**Remove the application:**
+**Remove everything:**
 ```bash
 ssh-tray --uninstall
-# or
-ssh-tray-uninstall
-# or
-/opt/ssh-tray/uninstall.sh
 ```
 
-The uninstaller will offer to backup your configuration files before removal.
+*Offers to backup your bookmarks*
+
+![Uninstall Process](docs/images/uninstall-backup.png)
+*Safe uninstall process with automatic configuration backup*
 
 ---
 
-## Troubleshooting
+## 🆘 Troubleshooting
 
-**"AppIndicator3 not found":**
+**"AppIndicator3 not found"**
 ```bash
 sudo apt install gir1.2-appindicator3-0.1
 ```
 
-**"No module named 'gi'":**
-```bash
-sudo apt install python3-gi python3-gi-cairo
-```
+**"No tray icon"**
+- Check desktop supports system tray
+- Try different desktop environment
 
-**"Terminal not found":**
+**"Terminal not found"**
 - Install a terminal: `sudo apt install mate-terminal`
-- Configure in `~/.ssh_tray_config`
+- Configure in settings
 
 **Need help?**
-- GitHub: https://github.com/vordan/ssh-tray/issues
-- Email: vordan@infoproject.biz
+- 📧 vordan@infoproject.biz
+- 🐛 [GitHub Issues](https://github.com/vordan/ssh-tray/issues)
 
 ---
 
-For detailed documentation, see [README.md](README.md).
+**Installation takes ~30 seconds • Works on Ubuntu, Mint, Fedora, and more**

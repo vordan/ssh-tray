@@ -65,9 +65,17 @@ src/
     dialogs.py
     editor.py
     main.py
+    sync.py
     system.py
     widgets.py
+  sync_service/
+    sync_service.js
   ssh_tray.py
+test/
+  .user_id
+  service-test.sh
+  sync-module-test.sh
+  test-bookmarks.txt
 web/
   index.html
 INSTALL.md
@@ -81,6 +89,502 @@ ssh-tray-start.sh
 
 <files>
 This section contains the contents of the repository's files.
+
+<file path="src/ssh_tray/sync.py">
+"""
+===============================================================================
+ssh_tray.sync.py - Configuration sync functionality for SSH Bookmark Manager
+Author: Vanco Ordanoski
+MIT License
+
+Handles syncing SSH bookmarks across multiple computers using a central server.
+===============================================================================
+"""
+
+# Suppress urllib3/chardet version warnings from requests
+import warnings
+warnings.filterwarnings('ignore')  # Suppress all warnings
+
+import os
+import requests
+from .configuration import BOOKMARKS_FILE, CONFIG_FILE
+from .system import show_notification
+
+SYNC_CONFIG_FILE = os.path.expanduser('~/.ssh-tray-sync')
+USER_ID_FILE = '/opt/ssh-tray/.user_id'
+
+def get_sync_config():
+	"""Read sync configuration from file.
+
+	Returns:
+		dict: Sync configuration with server, port, user_id, enabled status
+	"""
+	config = {
+		'enabled': False,
+		'server': 'localhost',
+		'port': 9182,
+		'user_id': None
+	}
+
+	# Read main config for server settings
+	if os.path.exists(CONFIG_FILE):
+		try:
+			with open(CONFIG_FILE, 'r') as f:
+				for line in f:
+					line = line.strip()
+					if line.startswith('sync_server='):
+						config['server'] = line.split('=', 1)[1].strip()
+					elif line.startswith('sync_port='):
+						try:
+							config['port'] = int(line.split('=', 1)[1].strip())
+						except ValueError:
+							pass
+					elif line.startswith('sync_enabled='):
+						config['enabled'] = line.split('=', 1)[1].strip().lower() in ('true', '1', 'yes')
+		except Exception:
+			pass
+
+	# Read user ID from installation directory
+	if os.path.exists(USER_ID_FILE):
+		try:
+			with open(USER_ID_FILE, 'r') as f:
+				for line in f:
+					if line.startswith('user_id='):
+						config['user_id'] = line.split('=', 1)[1].strip()
+						break
+		except Exception:
+			pass
+
+	return config
+
+def save_sync_config(enabled, server, port):
+	"""Save sync configuration to main config file.
+
+	Args:
+		enabled (bool): Whether sync is enabled
+		server (str): Sync server hostname/IP
+		port (int): Sync server port
+	"""
+	# Read existing config
+	config_lines = []
+	if os.path.exists(CONFIG_FILE):
+		try:
+			with open(CONFIG_FILE, 'r') as f:
+				config_lines = f.readlines()
+		except Exception:
+			pass
+
+	# Update sync settings
+	sync_settings = {
+		'sync_enabled': str(enabled).lower(),
+		'sync_server': server,
+		'sync_port': str(port)
+	}
+
+	# Remove existing sync settings
+	config_lines = [line for line in config_lines
+	               if not any(line.strip().startswith(f'{key}=') for key in sync_settings.keys())]
+
+	# Add updated sync settings
+	for key, value in sync_settings.items():
+		config_lines.append(f'{key}={value}\n')
+
+	# Write updated config
+	try:
+		with open(CONFIG_FILE, 'w') as f:
+			f.writelines(config_lines)
+	except Exception as e:
+		show_notification(f"Failed to save sync configuration: {e}")
+
+def is_sync_enabled():
+	"""Check if sync is enabled.
+
+	Returns:
+		bool: True if sync is enabled and properly configured
+	"""
+	config = get_sync_config()
+	return config['enabled'] and config['user_id'] is not None
+
+def upload_bookmarks():
+	"""Upload current bookmarks to sync server.
+
+	Returns:
+		str or None: Sync ID if successful, None if failed
+	"""
+	if not is_sync_enabled():
+		show_notification("Sync is not enabled or configured.")
+		return None
+
+	config = get_sync_config()
+
+	try:
+		# Read bookmarks file
+		if not os.path.exists(BOOKMARKS_FILE):
+			show_notification("No bookmarks file found to upload.")
+			return None
+
+		with open(BOOKMARKS_FILE, 'r') as f:
+			content = f.read()
+
+		# Upload to server
+		url = f"http://{config['server']}:{config['port']}/upload"
+		headers = {'X-User-ID': config['user_id']}
+
+		response = requests.post(url, data=content, headers=headers, timeout=10)
+
+		if response.status_code == 200:
+			sync_id = response.text.strip()
+			show_notification(f"Bookmarks uploaded successfully!\nSync ID: {sync_id}")
+			return sync_id
+		else:
+			show_notification(f"Upload failed: {response.status_code} - {response.text}")
+			return None
+
+	except requests.exceptions.RequestException as e:
+		show_notification(f"Network error during upload: {e}")
+		return None
+	except Exception as e:
+		show_notification(f"Error uploading bookmarks: {e}")
+		return None
+
+def download_bookmarks(sync_id):
+	"""Download bookmarks from sync server.
+
+	Args:
+		sync_id (str): Sync ID to download
+
+	Returns:
+		bool: True if successful, False if failed
+	"""
+	if not is_sync_enabled():
+		show_notification("Sync is not enabled or configured.")
+		return False
+
+	config = get_sync_config()
+
+	# Validate sync ID format
+	if not sync_id or len(sync_id) != 8 or not all(c in '0123456789abcdef' for c in sync_id.lower()):
+		show_notification("Invalid sync ID format. Must be 8 hexadecimal characters.")
+		return False
+
+	try:
+		# Download from server
+		url = f"http://{config['server']}:{config['port']}/download/{sync_id.lower()}"
+		headers = {'X-User-ID': config['user_id']}
+
+		response = requests.get(url, headers=headers, timeout=10)
+
+		if response.status_code == 200:
+			content = response.text
+
+			# Backup existing bookmarks
+			if os.path.exists(BOOKMARKS_FILE):
+				backup_file = f"{BOOKMARKS_FILE}.backup"
+				try:
+					with open(BOOKMARKS_FILE, 'r') as src, open(backup_file, 'w') as dst:
+						dst.write(src.read())
+				except Exception:
+					pass  # Backup failed, but continue
+
+			# Write new bookmarks
+			with open(BOOKMARKS_FILE, 'w') as f:
+				f.write(content)
+
+			show_notification("Bookmarks downloaded and applied successfully!")
+			return True
+		elif response.status_code == 404:
+			show_notification("Sync ID not found. Please check the ID and try again.")
+			return False
+		else:
+			show_notification(f"Download failed: {response.status_code} - {response.text}")
+			return False
+
+	except requests.exceptions.RequestException as e:
+		show_notification(f"Network error during download: {e}")
+		return False
+	except Exception as e:
+		show_notification(f"Error downloading bookmarks: {e}")
+		return False
+
+def test_sync_connection():
+	"""Test connection to sync server.
+
+	Returns:
+		bool: True if server is reachable, False otherwise
+	"""
+	config = get_sync_config()
+
+	try:
+		url = f"http://{config['server']}:{config['port']}/status"
+		response = requests.get(url, timeout=5)
+		return response.status_code == 200
+	except Exception:
+		return False
+</file>
+
+<file path="src/sync_service/sync_service.js">
+const http = require('http');
+const fs = require('fs');
+const path = require('path');
+const crypto = require('crypto');
+
+const DATA_DIR = '/var/ssh-tray-sync';
+const PORT = 9182;
+
+// Ensure data directory exists
+if (!fs.existsSync(DATA_DIR)) {
+	fs.mkdirSync(DATA_DIR, { recursive: true });
+	console.log(`Created data directory: ${DATA_DIR}`);
+}
+
+const server = http.createServer((req, res) => {
+	// Enable CORS for web requests
+	res.setHeader('Access-Control-Allow-Origin', '*');
+	res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+	res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-User-ID');
+	
+	// Handle OPTIONS preflight requests
+	if (req.method === 'OPTIONS') {
+		res.writeHead(200);
+		res.end();
+		return;
+	}
+	
+	const timestamp = new Date().toISOString();
+	console.log(`${timestamp} - ${req.method} ${req.url} from ${req.connection.remoteAddress}`);
+	
+	if (req.method === 'POST' && req.url === '/upload') {
+		// Upload bookmark configuration
+		const userId = req.headers['x-user-id'];
+		if (!userId || !/^[a-f0-9]{16}$/.test(userId)) {
+			res.writeHead(400, {'Content-Type': 'text/plain'});
+			res.end('Invalid or missing user ID');
+			return;
+		}
+		
+		let body = '';
+		req.on('data', chunk => {
+			body += chunk;
+			// Prevent huge uploads (max 64KB for config files)
+			if (body.length > 65536) {
+				res.writeHead(413, {'Content-Type': 'text/plain'});
+				res.end('File too large');
+				req.destroy();
+				return;
+			}
+		});
+		
+		req.on('end', () => {
+			try {
+				// Generate sync ID and create filename with user prefix
+				const syncId = crypto.randomBytes(4).toString('hex');
+				const fileName = `${userId}_${syncId}.txt`;
+				const filePath = path.join(DATA_DIR, fileName);
+				
+				// Write the configuration file
+				fs.writeFileSync(filePath, body, 'utf8');
+				
+				console.log(`Uploaded config for user ${userId}, sync ID: ${syncId}`);
+				res.writeHead(200, {'Content-Type': 'text/plain'});
+				res.end(syncId);
+			} catch (error) {
+				console.error('Upload error:', error);
+				res.writeHead(500, {'Content-Type': 'text/plain'});
+				res.end('Server error');
+			}
+		});
+		
+		req.on('error', (error) => {
+			console.error('Request error:', error);
+			res.writeHead(400);
+			res.end('Bad request');
+		});
+	} 
+	else if (req.method === 'GET' && req.url.startsWith('/download/')) {
+		// Download bookmark configuration
+		const urlParts = req.url.split('/');
+		if (urlParts.length !== 3) {
+			res.writeHead(400, {'Content-Type': 'text/plain'});
+			res.end('Invalid URL format');
+			return;
+		}
+		
+		const syncId = urlParts[2];
+		const userId = req.headers['x-user-id'];
+		
+		if (!userId || !/^[a-f0-9]{16}$/.test(userId)) {
+			res.writeHead(400, {'Content-Type': 'text/plain'});
+			res.end('Invalid or missing user ID');
+			return;
+		}
+		
+		if (!/^[a-f0-9]{8}$/.test(syncId)) {
+			res.writeHead(400, {'Content-Type': 'text/plain'});
+			res.end('Invalid sync ID format');
+			return;
+		}
+		
+		const fileName = `${userId}_${syncId}.txt`;
+		const filePath = path.join(DATA_DIR, fileName);
+		
+		try {
+			if (fs.existsSync(filePath)) {
+				const content = fs.readFileSync(filePath, 'utf8');
+				console.log(`Downloaded config for user ${userId}, sync ID: ${syncId}`);
+				res.writeHead(200, {'Content-Type': 'text/plain'});
+				res.end(content);
+			} else {
+				console.log(`Config not found for user ${userId}, sync ID: ${syncId}`);
+				res.writeHead(404, {'Content-Type': 'text/plain'});
+				res.end('Configuration not found');
+			}
+		} catch (error) {
+			console.error('Download error:', error);
+			res.writeHead(500, {'Content-Type': 'text/plain'});
+			res.end('Server error');
+		}
+	}
+	else if (req.method === 'GET' && req.url === '/status') {
+		// Health check endpoint
+		const fileCount = fs.readdirSync(DATA_DIR).length;
+		res.writeHead(200, {'Content-Type': 'application/json'});
+		res.end(JSON.stringify({
+			status: 'online',
+			port: PORT,
+			files: fileCount,
+			uptime: process.uptime()
+		}));
+	}
+	else {
+		res.writeHead(404, {'Content-Type': 'text/plain'});
+		res.end('Endpoint not found');
+	}
+});
+
+// Error handling
+server.on('error', (error) => {
+	console.error('Server error:', error);
+});
+
+// Graceful shutdown
+process.on('SIGINT', () => {
+	console.log('\nShutting down SSH Tray Sync service...');
+	server.close(() => {
+		console.log('Server closed.');
+		process.exit(0);
+	});
+});
+
+server.listen(PORT, '0.0.0.0', () => {
+	console.log(`SSH Tray Sync service running on port ${PORT}`);
+	console.log(`Data directory: ${DATA_DIR}`);
+	console.log('Endpoints:');
+	console.log('  POST /upload - Upload configuration');
+	console.log('  GET /download/{syncId} - Download configuration');
+	console.log('  GET /status - Service status');
+});
+</file>
+
+<file path="test/.user_id">
+user_id=a1b2c3d4e5f6789a
+</file>
+
+<file path="test/service-test.sh">
+#!/bin/bash
+SERVER="10.10.11.166:9182"
+USER_ID="a1b2c3d4e5f6789a"  # 16 hex chars
+
+echo "Testing SSH Tray Sync Service at $SERVER..."
+echo "User ID: $USER_ID (length: ${#USER_ID})"
+
+# Test status
+echo -e "\n1. Testing status endpoint..."
+curl -s http://$SERVER/status && echo
+
+# Create test data
+echo -e "\n2. Creating test data..."
+TEST_DATA="# Test bookmarks
+------ Test Servers ------
+Test Server	user@10.10.11.100
+Another Test	root@test.local"
+
+echo "Test data created."
+
+# Test upload
+echo -e "\n3. Testing upload..."
+echo "Sending User-ID: $USER_ID"
+SYNC_ID=$(echo "$TEST_DATA" | curl -s -X POST -H "X-User-ID: $USER_ID" --data-binary @- http://$SERVER/upload)
+echo "Response: '$SYNC_ID'"
+
+if [[ ${#SYNC_ID} -eq 8 ]]; then
+    echo "✓ Upload successful! Sync ID: $SYNC_ID"
+    
+    # Test download
+    echo -e "\n4. Testing download..."
+    DOWNLOADED=$(curl -s -H "X-User-ID: $USER_ID" http://$SERVER/download/$SYNC_ID)
+    echo "Downloaded content:"
+    echo "$DOWNLOADED"
+    
+    if [[ "$DOWNLOADED" == "$TEST_DATA" ]]; then
+        echo "✓ Download successful! Data matches."
+    else
+        echo "✗ Download failed or data mismatch."
+    fi
+else
+    echo "✗ Upload failed: $SYNC_ID"
+fi
+
+echo -e "\nTest complete!"
+</file>
+
+<file path="test/sync-module-test.sh">
+#!/bin/bash
+# sync-module-test.sh - Test Python sync module from test/ directory
+
+echo "Testing SSH Tray Python sync module from test directory..."
+
+# Go up one level to the ssh-tray root
+cd ..
+
+echo "Using SSH Tray directory: $(pwd)"
+
+# Test the sync module
+python3 -c "
+import sys
+sys.path.insert(0, 'src')
+
+try:
+    from ssh_tray.sync import get_sync_config, test_sync_connection
+    
+    print('Getting sync config...')
+    config = get_sync_config()
+    print(f'Config: {config}')
+    
+    if config['enabled'] and config['user_id']:
+        print('Testing connection...')
+        result = test_sync_connection()
+        print(f'Connection test: {\"✓ SUCCESS\" if result else \"✗ FAILED\"}')
+    else:
+        print('Sync not enabled or user_id missing')
+        print(f'  enabled: {config[\"enabled\"]}')
+        print(f'  user_id: {config[\"user_id\"]}')
+        
+except ImportError as e:
+    print(f'Import error: {e}')
+except Exception as e:
+    print(f'Error: {e}')
+"
+</file>
+
+<file path="test/test-bookmarks.txt">
+# Test SSH bookmarks
+------ Development ------
+Test Serveruser@test.example.com
+Local VMroot@192.168.1.100
+
+------ Production ------
+Web Serverdeploy@prod.example.com
+</file>
 
 <file path="archive/ssh_tray.old.py">
 #!/usr/bin/env python3
@@ -1452,9 +1956,11 @@ This is the main entry point for the SSH Bookmark Manager tray application.
 """
 
 import gi
+import signal
+import sys
 gi.require_version('Gtk', '3.0')
 gi.require_version('AppIndicator3', '0.1')
-from gi.repository import Gtk, AppIndicator3
+from gi.repository import Gtk, AppIndicator3, GLib
 
 from .configuration import (
 	read_config_terminal, ensure_config_files, load_bookmarks, show_instructions
@@ -1482,6 +1988,19 @@ class SSHTrayApp:
 		self.menu = Gtk.Menu()
 		self.build_menu()
 		self.app.set_menu(self.menu)
+
+		# Set up signal handlers for graceful shutdown
+		self._setup_signal_handlers()
+
+	def _setup_signal_handlers(self):
+		"""Set up signal handlers for graceful shutdown."""
+		def signal_handler(signum, frame):
+			print(f"\nReceived signal {signum}, shutting down gracefully...")
+			GLib.idle_add(self.quit, None)
+
+		# Handle Ctrl+C (SIGINT) and termination (SIGTERM)
+		signal.signal(signal.SIGINT, signal_handler)
+		signal.signal(signal.SIGTERM, signal_handler)
 
 	def build_menu(self):
 		"""Build the tray context menu from bookmarks and add control items."""
@@ -1543,23 +2062,40 @@ class SSHTrayApp:
 		show_instructions()
 
 	def quit(self, widget):
-		"""Exit the application."""
-		Gtk.main_quit()
+		"""Exit the application gracefully."""
+		print("SSH Bookmark Manager shutting down...")
+		try:
+			# Give time for any pending operations to complete
+			GLib.timeout_add(100, lambda: Gtk.main_quit() or False)
+		except Exception as e:
+			print(f"Error during shutdown: {e}")
+			Gtk.main_quit()
 
 def main():
 	"""Main application entry point."""
-	# Ensure configuration files exist, show help if first run
-	created = ensure_config_files()
+	try:
+		# Ensure configuration files exist, show help if first run
+		created = ensure_config_files()
 
-	# Create and run the tray application
-	app = SSHTrayApp()
+		# Create and run the tray application
+		app = SSHTrayApp()
 
-	# Show instructions on first run
-	if created:
-		show_instructions()
+		# Show instructions on first run
+		if created:
+			show_instructions()
 
-	# Start GTK main loop
-	Gtk.main()
+		print("SSH Bookmark Manager started. Press Ctrl+C to quit gracefully.")
+
+		# Start GTK main loop
+		Gtk.main()
+
+	except KeyboardInterrupt:
+		print("\nShutdown interrupted by user.")
+	except Exception as e:
+		print(f"Error starting SSH Bookmark Manager: {e}")
+		sys.exit(1)
+	finally:
+		print("SSH Bookmark Manager stopped.")
 
 if __name__ == '__main__':
 	main()
@@ -2326,44 +2862,52 @@ class ActionButtonsWidget:
 </file>
 
 <file path="INSTALL.md">
-# Installation Guide - SSH Bookmark Manager
+# Installation Guide
 
-Quick installation guide for SSH Bookmark Manager.
+**Get SSH Bookmark Manager running in 2 minutes**
+
+![Installation Process](docs/images/installation-demo.png)
+*Simple one-command installation that sets up everything automatically*
 
 ---
 
-## Quick Install
-
-**One command installation:**
+## 🚀 Quick Install
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/vordan/ssh-tray/main/install.sh | bash
 ```
 
+**Then run:** `ssh-tray`
+
+![First Run](docs/images/first-run.png)
+*SSH Bookmark Manager shows helpful instructions on first startup*
+
 ---
 
-## Requirements
+## 📋 Requirements
 
-**Operating System:**
-- Linux with desktop environment (Ubuntu, Fedora, Mint, etc.)
+**System:**
+- Linux with desktop environment
+- Python 3.6+ 
+- System tray support
 
-**Dependencies:**
+**Install dependencies:**
 ```bash
-# Ubuntu/Debian
-sudo apt install python3-gi gir1.2-appindicator3-0.1 python3-gi-cairo
+# Ubuntu/Debian/Mint
+sudo apt install python3-gi gir1.2-appindicator3-0.1
 
 # Fedora
-sudo dnf install python3-gobject gtk3-devel libappindicator-gtk3-devel
+sudo dnf install python3-gobject libappindicator-gtk3-devel
 
-# Terminal (choose one)
+# Terminal (pick one)
 sudo apt install mate-terminal gnome-terminal xfce4-terminal
 ```
 
 ---
 
-## Manual Install
+## 🔧 Manual Install
 
-**Download and run:**
+**Download & run:**
 ```bash
 wget https://raw.githubusercontent.com/vordan/ssh-tray/main/install.sh
 chmod +x install.sh
@@ -2379,64 +2923,54 @@ cd ssh-tray
 
 ---
 
-## Usage
+## ⚡ First Run
 
-**Start the application:**
-```bash
-ssh-tray
-```
+1. **Start:** `ssh-tray`
+2. **Right-click tray icon** → "Edit bookmarks/config" 
+3. **Add your SSH servers**
+4. **Click to connect!**
 
-**Commands:**
-```bash
-ssh-tray --help      # Show help
-ssh-tray --version   # Show version
-ssh-tray --uninstall # Remove application
-```
-
-**Configure:**
-- Right-click tray icon → "Edit bookmarks/config"
-- Or edit `~/.ssh_bookmarks` and `~/.ssh_tray_config`
+![Quick Setup](docs/images/quick-setup.png)
+*Add your first bookmark in seconds with the intuitive editor*
 
 ---
 
-## Uninstall
+## 🗑️ Uninstall
 
-**Remove the application:**
+**Remove everything:**
 ```bash
 ssh-tray --uninstall
-# or
-ssh-tray-uninstall
-# or
-/opt/ssh-tray/uninstall.sh
 ```
 
-The uninstaller will offer to backup your configuration files before removal.
+*Offers to backup your bookmarks*
+
+![Uninstall Process](docs/images/uninstall-backup.png)
+*Safe uninstall process with automatic configuration backup*
 
 ---
 
-## Troubleshooting
+## 🆘 Troubleshooting
 
-**"AppIndicator3 not found":**
+**"AppIndicator3 not found"**
 ```bash
 sudo apt install gir1.2-appindicator3-0.1
 ```
 
-**"No module named 'gi'":**
-```bash
-sudo apt install python3-gi python3-gi-cairo
-```
+**"No tray icon"**
+- Check desktop supports system tray
+- Try different desktop environment
 
-**"Terminal not found":**
+**"Terminal not found"**
 - Install a terminal: `sudo apt install mate-terminal`
-- Configure in `~/.ssh_tray_config`
+- Configure in settings
 
 **Need help?**
-- GitHub: https://github.com/vordan/ssh-tray/issues
-- Email: vordan@infoproject.biz
+- 📧 vordan@infoproject.biz
+- 🐛 [GitHub Issues](https://github.com/vordan/ssh-tray/issues)
 
 ---
 
-For detailed documentation, see [README.md](README.md).
+**Installation takes ~30 seconds • Works on Ubuntu, Mint, Fedora, and more**
 </file>
 
 <file path="install.sh">
@@ -2452,6 +2986,7 @@ SSH Bookmark Manager Installer
 This script will:
  - Download the latest version of SSH Bookmark Manager from GitHub as a ZIP.
  - Install the project into /opt/ssh-tray (requires sudo).
+ - Generate a unique user ID for sync functionality.
  - Make all scripts executable.
  - Create a launcher script for easy startup.
  - Create a symlink in /usr/local/bin so you can launch 'ssh-tray' from anywhere.
@@ -2461,7 +2996,6 @@ This script will:
 If you already have /opt/ssh-tray, it will be replaced (after confirmation).
 
 Are you sure you want to CONTINUE? [Y/n]
-===============================================================================
 EOF
 
 read -r ok
@@ -2506,6 +3040,26 @@ echo "Installing to $INSTALL_DIR ..."
 sudo mv "$REPO_SUBDIR" "$INSTALL_DIR"
 sudo chown -R root:root "$INSTALL_DIR"
 
+# Generate unique user ID for sync functionality
+echo "Generating unique user ID for sync functionality..."
+if command -v openssl >/dev/null 2>&1; then
+	USER_ID=$(openssl rand -hex 8)
+elif command -v xxd >/dev/null 2>&1 && [ -r /dev/urandom ]; then
+	USER_ID=$(head -c 8 /dev/urandom | xxd -p)
+else
+	# Fallback method using date and hostname
+	USER_ID=$(echo "${HOSTNAME}$(date +%s)" | sha256sum | cut -c1-16)
+fi
+
+echo "Creating user ID file..."
+sudo tee "$INSTALL_DIR/.user_id" > /dev/null <<EOF2
+user_id=$USER_ID
+created=$(date -Iseconds)
+hostname=$(hostname)
+EOF2
+sudo chmod 644 "$INSTALL_DIR/.user_id"
+echo "Generated sync user ID: $USER_ID"
+
 # Make Python scripts executable
 sudo chmod +x "$INSTALL_DIR/$MAIN_LAUNCHER"
 sudo find "$INSTALL_DIR/src" -name "*.py" -exec sudo chmod +x {} \;
@@ -2548,9 +3102,13 @@ echo "    $BIN_NAME --version      Show version information"
 echo "    $BIN_NAME --uninstall    Uninstall the application"
 echo "    ssh-tray-uninstall       Direct uninstaller access"
 echo
+echo "Sync functionality:"
+echo "    User ID: $USER_ID"
+echo "    Configure sync server in the application settings"
+echo
 echo "The application will create configuration files in your home directory:"
-echo "    ~/.ssh_bookmarks     (your SSH bookmarks)"
-echo "    ~/.ssh_tray_config   (terminal preferences)"
+echo "    ~/.ssh-bookmarks     (your SSH bookmarks)"
+echo "    ~/.ssh-tray-config   (terminal and sync preferences)"
 echo
 echo "To edit bookmarks/config, use the tray menu when the app is running."
 echo
@@ -2830,6 +3388,7 @@ from .configuration import load_bookmarks, save_bookmarks, read_config_terminal
 from .system import is_autostart_enabled, add_to_autostart, create_desktop_file, show_notification
 from .dialogs import BookmarkDialog, GroupDialog, show_terminal_help
 from .widgets import BookmarkListWidget, TerminalSelectorWidget, ActionButtonsWidget
+from .sync import get_sync_config, save_sync_config, is_sync_enabled, upload_bookmarks, download_bookmarks, test_sync_connection
 
 class EditBookmarksDialog(Gtk.Dialog):
 	"""Main editor dialog for bookmarks, configuration, and system integration."""
@@ -2896,7 +3455,7 @@ class EditBookmarksDialog(Gtk.Dialog):
 		self._create_system_options(box)
 	
 	def _create_system_options(self, box):
-		"""Create system integration options (autostart and desktop file)."""
+		"""Create system integration options (autostart, desktop file, and sync)."""
 		opt_box = Gtk.Box(spacing=8)
 		
 		# Autostart toggle switch for login startup
@@ -2906,9 +3465,28 @@ class EditBookmarksDialog(Gtk.Dialog):
 		opt_box.pack_start(Gtk.Label(label="Autostart:"), False, False, 0)
 		opt_box.pack_start(self.autostart_switch, False, False, 0)
 		
-		# Add separator between autostart and menu button
-		separator = Gtk.Separator(orientation=Gtk.Orientation.VERTICAL)
-		opt_box.pack_start(separator, False, False, 8)
+		# Add separator between autostart and other options
+		separator1 = Gtk.Separator(orientation=Gtk.Orientation.VERTICAL)
+		opt_box.pack_start(separator1, False, False, 8)
+		
+		# Sync toggle switch for configuration synchronization
+		self.sync_switch = Gtk.Switch()
+		self.sync_switch.set_active(is_sync_enabled())
+		self.sync_switch.connect("notify::active", self._on_sync_toggle)
+		opt_box.pack_start(Gtk.Label(label="Sync:"), False, False, 0)
+		opt_box.pack_start(self.sync_switch, False, False, 0)
+		
+		# Sync configuration button
+		sync_config_btn = Gtk.Button(label="Sync Settings")
+		sync_config_btn.set_image(Gtk.Image.new_from_icon_name("preferences-system", Gtk.IconSize.BUTTON))
+		sync_config_btn.set_always_show_image(True)
+		sync_config_btn.set_tooltip_text("Configure sync server and options")
+		sync_config_btn.connect("clicked", self._on_sync_config)
+		opt_box.pack_start(sync_config_btn, False, False, 0)
+		
+		# Add separator between sync and menu button
+		separator2 = Gtk.Separator(orientation=Gtk.Orientation.VERTICAL)
+		opt_box.pack_start(separator2, False, False, 8)
 		
 		# Add to applications menu button with icon and text
 		desktop_btn = Gtk.Button(label="Add to Menu")
@@ -3031,6 +3609,252 @@ class EditBookmarksDialog(Gtk.Dialog):
 		else:
 			add_to_autostart(False)
 			show_notification("Autostart disabled.", parent=self)
+	
+	def _on_sync_toggle(self, switch, gparam):
+		"""Handle sync toggle switch changes."""
+		config = get_sync_config()
+		if switch.get_active():
+			if not config['user_id']:
+				show_notification("Sync requires installation with user ID. Please reinstall or contact support.", parent=self)
+				switch.set_active(False)
+				return
+			save_sync_config(True, config['server'], config['port'])
+			show_notification("Sync enabled. Use 'Sync Settings' to configure server.", parent=self)
+		else:
+			save_sync_config(False, config['server'], config['port'])
+			show_notification("Sync disabled.", parent=self)
+	
+	def _on_sync_config(self, button):
+		"""Show sync configuration dialog."""
+		self._show_sync_config_dialog()
+	
+	def _show_sync_config_dialog(self):
+		"""Display sync configuration dialog with upload/download options."""
+		config = get_sync_config()
+		
+		dialog = Gtk.Dialog(
+			title="Sync Configuration", transient_for=self, modal=True)
+		dialog.set_border_width(20)
+		dialog.set_default_size(450, 350)
+		
+		# Add Close button
+		dialog.add_button("Close", Gtk.ResponseType.CLOSE)
+		
+		box = dialog.get_content_area()
+		
+		# Server configuration section
+		server_frame = Gtk.Frame(label="Server Settings")
+		server_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+		server_box.set_border_width(10)
+		
+		# Server entry
+		server_box.pack_start(Gtk.Label(label="Server:", halign=Gtk.Align.START), False, False, 0)
+		server_entry = Gtk.Entry()
+		server_entry.set_text(config['server'])
+		server_box.pack_start(server_entry, False, False, 0)
+		
+		# Port entry
+		server_box.pack_start(Gtk.Label(label="Port:", halign=Gtk.Align.START), False, False, 0)
+		port_entry = Gtk.Entry()
+		port_entry.set_text(str(config['port']))
+		server_box.pack_start(port_entry, False, False, 0)
+		
+		# Save server settings button
+		save_btn = Gtk.Button(label="Save Settings")
+		save_btn.connect("clicked", lambda btn: self._save_server_settings(server_entry.get_text(), port_entry.get_text()))
+		server_box.pack_start(save_btn, False, False, 0)
+		
+		# Test connection button
+		test_btn = Gtk.Button(label="Test Connection")
+		test_btn.connect("clicked", lambda btn: self._test_sync_connection())
+		server_box.pack_start(test_btn, False, False, 0)
+		
+		server_frame.add(server_box)
+		box.pack_start(server_frame, False, False, 10)
+		
+		# Sync operations section
+		sync_frame = Gtk.Frame(label="Sync Operations")
+		sync_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+		sync_box.set_border_width(10)
+		
+		# User ID display with copy button
+		user_id_box = Gtk.Box(spacing=6)
+		user_id_label = Gtk.Label(label="User ID:", halign=Gtk.Align.START)
+		user_id_box.pack_start(user_id_label, False, False, 0)
+		
+		user_id_entry = Gtk.Entry()
+		if config['user_id']:
+			user_id_entry.set_text(config['user_id'])
+			user_id_entry.set_editable(False)
+		else:
+			user_id_entry.set_text("Not configured")
+			user_id_entry.set_editable(False)
+		user_id_box.pack_start(user_id_entry, True, True, 0)
+		
+		# Copy User ID button
+		copy_user_btn = Gtk.Button()
+		copy_user_btn.set_image(Gtk.Image.new_from_icon_name("edit-copy", Gtk.IconSize.BUTTON))
+		copy_user_btn.set_tooltip_text("Copy User ID to clipboard")
+		copy_user_btn.connect("clicked", lambda btn: self._copy_to_clipboard(config['user_id'] or "", "User ID copied to clipboard!"))
+		user_id_box.pack_start(copy_user_btn, False, False, 0)
+		
+		sync_box.pack_start(user_id_box, False, False, 0)
+		
+		# Upload button
+		upload_btn = Gtk.Button(label="Upload Bookmarks")
+		upload_btn.set_image(Gtk.Image.new_from_icon_name("go-up", Gtk.IconSize.BUTTON))
+		upload_btn.set_always_show_image(True)
+		upload_btn.connect("clicked", lambda btn: self._upload_bookmarks_with_display(dialog))
+		sync_box.pack_start(upload_btn, False, False, 0)
+		
+		# Download section with User ID pre-filled
+		download_label = Gtk.Label(label="Download from another computer:", halign=Gtk.Align.START)
+		sync_box.pack_start(download_label, False, False, 0)
+		
+		download_box = Gtk.Box(spacing=6)
+		download_entry = Gtk.Entry()
+		download_entry.set_placeholder_text("Enter Sync ID (8 characters)")
+		download_btn = Gtk.Button(label="Download")
+		download_btn.set_image(Gtk.Image.new_from_icon_name("go-down", Gtk.IconSize.BUTTON))
+		download_btn.set_always_show_image(True)
+		download_btn.connect("clicked", lambda btn: self._download_bookmarks(download_entry.get_text().strip()))
+		
+		download_box.pack_start(download_entry, True, True, 0)
+		download_box.pack_start(download_btn, False, False, 0)
+		sync_box.pack_start(download_box, False, False, 0)
+		
+		sync_frame.add(sync_box)
+		box.pack_start(sync_frame, True, True, 10)
+		
+		dialog.show_all()
+		dialog.run()
+		dialog.destroy()
+	
+	def _save_server_settings(self, server, port_str):
+		"""Save sync server settings."""
+		try:
+			port = int(port_str)
+			if not (1 <= port <= 65535):
+				raise ValueError("Port must be between 1 and 65535")
+			
+			config = get_sync_config()
+			save_sync_config(config['enabled'], server.strip(), port)
+			show_notification("Server settings saved successfully.", parent=self)
+		except ValueError as e:
+			show_notification(f"Invalid port number: {e}", parent=self)
+	
+	def _test_sync_connection(self):
+		"""Test connection to sync server."""
+		if test_sync_connection():
+			show_notification("✓ Connection successful!", parent=self)
+		else:
+			show_notification("✗ Connection failed. Check server settings.", parent=self)
+	
+	def _upload_bookmarks(self):
+		"""Upload current bookmarks to sync server."""
+		sync_id = upload_bookmarks()
+		if sync_id:
+			# Also refresh the menu since we just confirmed sync works
+			self._save_and_refresh()
+	
+	def _upload_bookmarks_with_display(self, parent_dialog):
+		"""Upload bookmarks and show sync ID in a copyable dialog."""
+		sync_id = upload_bookmarks()
+		if sync_id:
+			# Show sync ID in a dialog with copy functionality
+			self._show_sync_id_dialog(sync_id, parent_dialog)
+			# Also refresh the menu since we just confirmed sync works
+			self._save_and_refresh()
+	
+	def _show_sync_id_dialog(self, sync_id, parent):
+		"""Show sync ID in a copyable dialog."""
+		dialog = Gtk.Dialog(
+			title="Upload Successful", transient_for=parent, modal=True)
+		dialog.set_border_width(20)
+		dialog.add_button("Close", Gtk.ResponseType.CLOSE)
+		
+		box = dialog.get_content_area()
+		
+		# Success message
+		success_label = Gtk.Label()
+		success_label.set_markup("<b>✓ Bookmarks uploaded successfully!</b>")
+		box.pack_start(success_label, False, False, 10)
+		
+		# Instructions
+		instr_label = Gtk.Label()
+		instr_label.set_markup(
+			"Share this Sync ID with your other computers to download these bookmarks:")
+		instr_label.set_line_wrap(True)
+		box.pack_start(instr_label, False, False, 5)
+		
+		# Sync ID display with copy button
+		sync_id_box = Gtk.Box(spacing=6)
+		sync_id_entry = Gtk.Entry()
+		sync_id_entry.set_text(sync_id)
+		sync_id_entry.set_editable(False)
+		sync_id_entry.select_region(0, -1)  # Select all text for easy copying
+		sync_id_box.pack_start(sync_id_entry, True, True, 0)
+		
+		# Copy Sync ID button
+		copy_sync_btn = Gtk.Button(label="Copy")
+		copy_sync_btn.set_image(Gtk.Image.new_from_icon_name("edit-copy", Gtk.IconSize.BUTTON))
+		copy_sync_btn.set_always_show_image(True)
+		copy_sync_btn.connect("clicked", lambda btn: self._copy_to_clipboard(sync_id, "Sync ID copied to clipboard!"))
+		sync_id_box.pack_start(copy_sync_btn, False, False, 0)
+		
+		box.pack_start(sync_id_box, False, False, 10)
+		
+		# Usage instructions
+		usage_label = Gtk.Label()
+		usage_label.set_markup(
+			"<i>On other computers:</i>\n"
+			"1. Open SSH Bookmark Manager\n"
+			"2. Go to Edit → Sync Settings\n"
+			"3. Paste this Sync ID in the Download field")
+		usage_label.set_justify(Gtk.Justification.LEFT)
+		usage_label.set_halign(Gtk.Align.START)
+		box.pack_start(usage_label, False, False, 10)
+		
+		dialog.show_all()
+		dialog.run()
+		dialog.destroy()
+	
+	def _copy_to_clipboard(self, text, success_message):
+		"""Copy text to clipboard and show notification."""
+		try:
+			from gi.repository import Gdk
+			clipboard = Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD)
+			clipboard.set_text(text, -1)
+			clipboard.store()
+			show_notification(success_message, parent=self)
+		except Exception as e:
+			show_notification(f"Failed to copy to clipboard: {e}", parent=self)
+	
+	def _download_bookmarks(self, sync_id):
+		"""Download bookmarks from sync server."""
+		if not sync_id:
+			show_notification("Please enter a sync ID.", parent=self)
+			return
+		
+		if download_bookmarks(sync_id):
+			# Refresh the bookmark list and menu
+			bookmarks = load_bookmarks()
+			self.bookmark_widget = BookmarkListWidget(bookmarks)
+			# Find the scrolled window and replace its child
+			for child in self.get_content_area().get_children():
+				if isinstance(child, Gtk.ScrolledWindow):
+					child.get_parent().remove(child)
+					break
+			
+			# Re-add the updated bookmark widget
+			box = self.get_content_area()
+			children = box.get_children()
+			# Insert after terminal widget and before action buttons
+			box.pack_start(self.bookmark_widget.get_widget(), True, True, 10)
+			box.reorder_child(self.bookmark_widget.get_widget(), 2)
+			box.show_all()
+			
+			self._save_and_refresh()
 </file>
 
 <file path="src/ssh_tray/system.py">
@@ -3054,7 +3878,7 @@ ICON_NAME = 'network-server'
 
 def available_terminals():
 	"""Get list of supported terminal emulators available on the system.
-
+	
 	Returns:
 		list: Terminal command names that are found in PATH
 	"""
@@ -3066,13 +3890,13 @@ def available_terminals():
 
 def show_notification(message, parent=None):
 	"""Display a notification dialog with the given message.
-
+	
 	Args:
 		message (str): Text to display in the dialog
 		parent: Parent window for modal dialog (optional)
 	"""
 	from gi.repository import Gtk
-
+	
 	dialog = Gtk.MessageDialog(
 		parent=parent, modal=True, message_type=Gtk.MessageType.INFO,
 		buttons=Gtk.ButtonsType.OK, text=message)
@@ -3093,7 +3917,7 @@ def open_ssh_in_terminal(terminal, ssh_target, label):
 
 		# SECURITY: Quote ssh_target to prevent injection
 		ssh_target_safe = shlex.quote(ssh_target)
-
+		
 		# Clean up label by trimming quotes and then safely quote it
 		label_clean = label.strip('\'"')
 		label_safe = shlex.quote(label_clean)
@@ -3105,46 +3929,42 @@ def open_ssh_in_terminal(terminal, ssh_target, label):
 		else:
 			terminal_exec = shutil.which(terminal) or terminal
 
-		# Build command based on terminal type (restored tab behavior)
+		# Build command based on terminal type (with escape sequences for persistent titles)
 		if 'mate-terminal' in terminal_exec:
-			# Use --tab to open in existing window, with persistent title
-			cmd = [
-				terminal_exec, '--tab', '--title', label_safe, '--',
-				'bash', '-c', f'echo -ne "\\033]0;{label_clean}\\007"; ssh {ssh_target_safe}; exec bash'
-			]
-		elif 'gnome-terminal' in terminal_exec:
-			# Use --tab for existing window with escape sequence title
 			cmd = [
 				terminal_exec, '--tab', '--title', label_safe, '--',
 				'bash', '-c', f'echo -ne "\\033]0;{label_clean}\\007"; ssh {ssh_target_safe}; exec bash'
 			]
 		elif 'xfce4-terminal' in terminal_exec:
-			# XFCE terminal with tab and title
-			bash_cmd = f'bash -c "echo -ne \\"\\033]0;{label_clean}\\007\\"; ssh {ssh_target_safe}; exec bash"'
+			# Split the command construction to avoid complex escaping
+			echo_cmd = f'echo -ne "\\033]0;{label_clean}\\007"'
+			ssh_cmd = f'ssh {ssh_target_safe}'
+			full_cmd = f'{echo_cmd}; {ssh_cmd}'
 			cmd = [
-				terminal_exec, '--tab', '--title', label_safe,
-				'--command', bash_cmd
+				terminal_exec, '--tab', '--title', label_safe, '--command',
+				f'bash -c "{full_cmd}"'
+			]
+		elif 'gnome-terminal' in terminal_exec:
+			cmd = [
+				terminal_exec, '--tab', '--title', label_safe, '--',
+				'bash', '-c', f'echo -ne "\\033]0;{label_clean}\\007"; ssh {ssh_target_safe}; exec bash'
 			]
 		elif 'tilix' in terminal_exec:
-			# Tilix with new session in existing window
 			cmd = [
 				terminal_exec, '--action=session-add-down', '--',
 				'bash', '-c', f'echo -ne "\\033]0;{label_clean}\\007"; ssh {ssh_target_safe}; exec bash'
 			]
 		elif 'konsole' in terminal_exec:
-			# KDE Konsole with new tab
 			cmd = [
 				terminal_exec, '--new-tab', '-p', f'tabtitle={label_clean}', '-e',
 				'bash', '-c', f'echo -ne "\\033]0;{label_clean}\\007"; ssh {ssh_target_safe}; exec bash'
 			]
 		elif 'xterm' in terminal_exec:
-			# xterm opens new window (no tab support)
 			cmd = [
 				terminal_exec, '-T', label_safe, '-e',
 				'bash', '-c', f'echo -ne "\\033]0;{label_clean}\\007"; ssh {ssh_target_safe}; exec bash'
 			]
 		else:
-			# Generic terminal command
 			cmd = [
 				terminal_exec, '-e',
 				'bash', '-c', f'echo -ne "\\033]0;{label_clean}\\007"; ssh {ssh_target_safe}; exec bash'
@@ -3166,7 +3986,7 @@ AUTOSTART_FILE = os.path.join(AUTOSTART_DIR, 'ssh_tray.desktop')
 
 def create_desktop_file(exec_path):
 	"""Create .desktop file for application menu integration.
-
+	
 	Args:
 		exec_path (str): Path to the executable to launch
 	"""
@@ -3179,7 +3999,7 @@ Terminal=false
 Categories=Utility;Network;
 Comment=SSH tray bookmarks and launcher
 """
-
+	
 	# Ensure directory exists and write desktop file
 	os.makedirs(os.path.dirname(DESKTOP_FILE), exist_ok=True)
 	with open(DESKTOP_FILE, 'w') as f:
@@ -3188,7 +4008,7 @@ Comment=SSH tray bookmarks and launcher
 
 def add_to_autostart(enable=True):
 	"""Enable or disable application autostart on login.
-
+	
 	Args:
 		enable (bool): True to enable autostart, False to disable
 	"""
@@ -3203,7 +4023,7 @@ def add_to_autostart(enable=True):
 
 def is_autostart_enabled():
 	"""Check if application autostart is currently enabled.
-
+	
 	Returns:
 		bool: True if autostart file exists, False otherwise
 	"""
@@ -3211,426 +4031,176 @@ def is_autostart_enabled():
 </file>
 
 <file path="MAKE.md">
-### Package Components
+# Developer Guide
 
-#### Core Application (`src/ssh_tray/`)
-
-- **`__init__.py`**: Package metadata, version information, and constants
-- **`main.py`**: GTK/AppIndicator tray application, system tray integration, menu management
-- **`configuration.py`**: Configuration file I/O, bookmark parsing and validation, help system
-- **`editor.py`**: GTK GUI dialogs, bookmark editor interface, system integration settings
-- **`system.py`**: Terminal launching logic# MAKE.md
-
-## SSH Bookmark Manager: Developer Build and Packaging Guide
-
-This document is for developers, maintainers, and contributors who want to understand the codebase, build process, development workflow, and packaging procedures for the SSH Bookmark Manager.
-
-**Target Audience:** Software developers, package maintainers, contributors, and system administrators who need to understand the technical implementation.
+**For developers who want to contribute or package SSH Bookmark Manager**
 
 ---
 
-## Project Architecture
-
-### Overview
-
-SSH Bookmark Manager follows modern Python packaging practices and Linux Filesystem Hierarchy Standard (FHS). The application is designed as a modular system with clear separation of concerns, making it maintainable and extensible.
-
-### Design Principles
-
-- **Modular Architecture**: Each component has a specific responsibility
-- **Linux Standards Compliance**: Follows FHS and XDG specifications
-- **User Experience Focus**: Professional installation with comprehensive uninstaller
-- **Developer Friendly**: Clear structure with helpful development tools
-- **Minimal Dependencies**: Uses standard Linux desktop components
-
-### Directory Structure
+## 🏗️ Project Structure
 
 ```
 ssh-tray/
-├── src/                          # Source code package
-│   ├── ssh_tray/                 # Main Python package
-│   │   ├── __init__.py           # Package metadata and version info
-│   │   ├── main.py               # Main tray application logic
-│   │   ├── configuration.py      # Config file handling and validation
-│   │   ├── editor.py             # GUI dialogs and bookmark editor
-│   │   └── system.py             # System integration and terminal handling
-│   └── ssh_tray.py               # Main launcher with CLI interface
-├── scripts/                      # Installation and utility scripts
-│   ├── install.sh                # Production installer (downloads from GitHub)
-│   ├── uninstall.sh              # Comprehensive uninstaller
-│   ├── git_init.sh               # Repository initialization script
-│   ├── git_commit.sh             # Git workflow helper
-│   ├── github_cli_install.sh     # GitHub CLI setup utility
-│   └── make_ssh_tray_project.sh  # Development project bootstrapper
-├── config/                       # Sample configuration files
-│   ├── sample_ssh_bookmarks      # Example bookmarks with documentation
-│   ├── sample_ssh_tray_config    # Example configuration file
-│   └── ssh_tray_uninstall.desktop # Desktop file for GUI uninstall
-├── archive/                      # Legacy and backup files
-│   └── ssh_tray.old.py           # Previous monolithic version
-├── ssh-tray-start.sh             # Production startup script
-├── repomix.config.json           # Code analysis and documentation tool config
-├── README.md                     # User documentation
-├── LICENSE.md                    # MIT License
-└── MAKE.md                       # This developer guide
+├── src/ssh_tray/              # Main Python package
+│   ├── main.py                # Tray app & menu
+│   ├── editor.py              # Bookmark editor dialog
+│   ├── sync.py                # Cross-computer sync
+│   ├── dialogs.py             # Add/edit dialogs
+│   ├── widgets.py             # UI components
+│   ├── configuration.py       # Config file handling
+│   └── system.py              # Terminal & desktop integration
+├── scripts/                   # Build & install scripts
+├── config/                    # Sample configs
+└── web/                       # Project website
 ```
 
 ---
 
-## Development Workflow
+## 🚀 Quick Development
 
-### Setting Up Development Environment
+**Run from source:**
+```bash
+git clone https://github.com/vordan/ssh-tray.git
+cd ssh-tray
+python3 src/ssh_tray.py
+```
 
-1. **Clone the repository:**
-   ```bash
-   git clone https://github.com/vordan/ssh-tray.git
-   cd ssh-tray
-   ```
+**Install dependencies:**
+```bash
+sudo apt install python3-gi gir1.2-appindicator3-0.1
+```
 
-2. **Install development dependencies:**
-   ```bash
-   sudo apt-get install python3-gi gir1.2-appindicator3-0.1 python3-gi-cairo
-   ```
+---
 
-3. **Run from source for testing:**
-   ```bash
-   python3 src/ssh_tray.py
-   python3 src/ssh_tray.py --help
-   python3 src/ssh_tray.py --version
-   ```
+## 🔧 Build Tools
 
-### Development Scripts
-
-#### `scripts/make_ssh_tray_project.sh`
-
-**Purpose**: Creates a clean development project structure for new contributors or packaging.
-
-**Usage**:
+**Create project structure:**
 ```bash
 ./scripts/make_ssh_tray_project.sh
 ```
 
-**What it does**:
-- Creates complete directory structure
-- Generates all source files with proper package structure
-- Sets up sample configuration files
-- Provides a foundation for customization or distribution
-
-**Use cases**:
-- New developer onboarding
-- Creating custom distributions
-- Preparing ZIP/tar archives
-- Setting up isolated development environments
-
-#### `scripts/git_init.sh`
-
-**Purpose**: Initialize or reinitialize the GitHub repository with clean history.
-
-**Usage**:
-```bash
-./scripts/git_init.sh
-```
-
-**Features**:
-- Deletes existing repository (with confirmation)
-- Creates fresh repository on GitHub
-- Sets up proper git configuration
-- Makes comprehensive initial commit
-- Handles git safe directory configuration
-
-**Use cases**:
-- Starting fresh with clean history
-- Major restructuring commits
-- Initial project setup
-
-#### `scripts/git_commit.sh`
-
-**Purpose**: Streamlined git workflow for regular development.
-
-**Usage**:
+**Git workflow:**
 ```bash
 ./scripts/git_commit.sh "Your commit message"
+./scripts/git_init.sh  # Reset repo (destructive!)
 ```
 
-**Features**:
-- Validates repository state
-- Shows pending changes
-- Optional diff review before commit
-- Automatic add, commit, and push workflow
-- Safety confirmations
-
----
-
-## Build and Package Management
-
-### Installation System
-
-The project uses a professional installation system following Linux standards:
-
-- **Installation Location**: `/opt/ssh-tray/` (FHS compliant)
-- **Command Access**: `/usr/local/bin/ssh-tray` (symlink)
-- **Uninstaller Access**: `/usr/local/bin/ssh-tray-uninstall` (symlink)
-- **User Configuration**: `~/.ssh_bookmarks`, `~/.ssh_tray_config`
-- **Desktop Integration**: XDG desktop files and autostart
-
-### Package Components
-
-#### Core Application (`src/ssh_tray/`)
-
-- **`__init__.py`**: Package metadata, version information
-- **`main.py`**: GTK/AppIndicator tray application, menu management
-- **`configuration.py`**: File I/O, bookmark parsing, validation
-- **`editor.py`**: GUI dialogs, bookmark editor, system integration UI
-- **`system.py`**: Terminal launching, desktop file creation, autostart management
-
-#### Launcher (`src/ssh_tray.py`)
-
-- **CLI Interface**: `--help`, `--version`, `--uninstall` commands
-- **Package Loading**: Dynamic module discovery and loading
-- **Error Handling**: Graceful failure with helpful error messages
-- **Uninstaller Integration**: Smart uninstaller discovery and execution
-
-### Dependencies
-
-#### Runtime Dependencies
-- **Python 3.x**: Core interpreter
-- **python3-gi**: GTK3 bindings
-- **gir1.2-appindicator3-0.1**: System tray integration
-- **python3-gi-cairo**: Drawing and graphics support
-
-#### System Dependencies
-- **Supported Terminal Emulator**: mate-terminal, gnome-terminal, xfce4-terminal, etc.
-- **Desktop Environment**: Any with system tray support
-- **sudo**: Required for installation to `/opt`
-
----
-
-## Code Standards and Practices
-
-### Coding Style
-
-- **Indentation**: Tabs (original project style maintained)
-- **Naming**: snake_case for functions and variables
-- **Documentation**: Inline docstrings explaining functionality
-- **Comments**: Describe what code does, not what changed
-- **Language**: English for all documentation and comments
-
-### Architecture Principles
-
-- **Separation of Concerns**: Each module has a specific responsibility
-- **Error Handling**: Graceful degradation with user-friendly messages
-- **User Experience**: Confirmation prompts for destructive actions
-- **System Integration**: Follow Linux desktop standards (XDG, FHS)
-
-### Import Structure
-
-```python
-# Standard library imports first
-import os
-import sys
-
-# Third-party imports
-from gi.repository import Gtk, AppIndicator3
-
-# Local package imports
-from .configuration import load_bookmarks
-from .system import open_ssh_in_terminal
-```
-
----
-
-## Testing and Quality Assurance
-
-### Manual Testing Checklist
-
-#### Core Functionality
-- [ ] Tray icon appears and responds
-- [ ] Bookmarks load correctly from file
-- [ ] SSH connections launch in terminal
-- [ ] Group headers display properly
-- [ ] Configuration editor works
-
-#### Installation/Uninstallation
-- [ ] `install.sh` completes without errors
-- [ ] Application launches via `ssh-tray` command
-- [ ] All CLI arguments work (`--help`, `--version`, `--uninstall`)
-- [ ] Uninstaller backs up configuration
-- [ ] Complete removal verification
-
-#### System Integration
-- [ ] Autostart functionality
-- [ ] Desktop file creation
-- [ ] Multiple terminal emulator support
-- [ ] Permission handling
-
-### Development Testing
-
+**Install GitHub CLI:**
 ```bash
-# Test launcher functionality
-python3 src/ssh_tray.py --help
-python3 src/ssh_tray.py --version
-python3 src/ssh_tray.py  # Should start tray app
-
-# Test package imports
-python3 -c "from src.ssh_tray.main import main; print('Import successful')"
-
-# Test uninstaller discovery
-python3 src/ssh_tray.py --uninstall  # Should find and offer to run uninstaller
+./scripts/github_cli_install.sh
 ```
 
 ---
 
-## Release Process
+## 📦 Installation System
 
-### Version Management
-
-Update version information in:
-1. `src/ssh_tray/__init__.py` - `__version__` variable
-2. `README.md` - Version badge and changelog
-3. Git tags for releases
-
-### Release Checklist
-
-1. **Code Review**:
-   - [ ] All functionality tested
-   - [ ] Documentation updated
-   - [ ] No debug code or TODO comments
-
-2. **Version Bump**:
-   - [ ] Update `__version__` in `__init__.py`
-   - [ ] Update README.md changelog
-   - [ ] Update any hardcoded version references
-
-3. **Testing**:
-   - [ ] Clean install test on fresh system
-   - [ ] Upgrade test from previous version
-   - [ ] Uninstall test with configuration backup
-
-4. **Repository**:
-   - [ ] Commit all changes
-   - [ ] Create git tag: `git tag v1.0.0`
-   - [ ] Push to GitHub: `git push --tags`
-
-5. **Documentation**:
-   - [ ] README.md reflects current features
-   - [ ] MAKE.md updated for any new development procedures
-   - [ ] Sample configuration files current
+- **Location:** `/opt/ssh-tray/` (Linux FHS compliant)
+- **Command:** `/usr/local/bin/ssh-tray` (symlink)
+- **Uninstaller:** `/usr/local/bin/ssh-tray-uninstall`
+- **User config:** `~/.ssh-bookmarks`, `~/.ssh-tray-config`
 
 ---
 
-## Distribution and Packaging
+## 🌐 Sync Server (Node.js)
 
-### GitHub Releases
+**Deploy your sync service:**
+```javascript
+// sync-service.js
+const http = require('http');
+// ... (see full source in repo)
+server.listen(9182);
+```
 
-The `install.sh` script downloads directly from GitHub main branch:
-- **Source**: `https://github.com/vordan/ssh-tray/archive/refs/heads/main.zip`
-- **Automatic**: Users get latest version automatically
-- **No Build Required**: Pure Python source distribution
+**Run:** `node sync-service.js`
 
-### Custom Distributions
-
-For custom distributions or packaging:
-
-1. **Use `make_ssh_tray_project.sh`** to create clean project structure
-2. **Modify configuration** defaults in the generated files
-3. **Package as tar.gz, .deb, .rpm, etc.** as needed
-4. **Maintain the `/opt/ssh-tray/` installation pattern** for compatibility
-
-### Enterprise Deployment
-
-For enterprise or custom deployment:
-- Modify `INSTALL_DIR` in `install.sh` for custom locations
-- Update symlink paths accordingly
-- Consider packaging as distribution-specific packages
-- Maintain uninstaller functionality
+**Endpoints:**
+- `POST /upload` - Upload config (returns sync ID)
+- `GET /download/{syncId}` - Download config
+- `GET /status` - Health check
 
 ---
 
-## Contributing Guidelines
+## 🧪 Testing
 
-### Code Contributions
+**Manual checklist:**
+- [ ] Tray icon appears
+- [ ] Bookmarks load/save
+- [ ] SSH connections work
+- [ ] Editor functions work
+- [ ] Sync upload/download
+- [ ] Install/uninstall
 
-1. **Fork the repository** on GitHub
-2. **Create feature branch**: `git checkout -b feature-name`
-3. **Follow coding standards** outlined above
-4. **Test thoroughly** using manual testing checklist
-5. **Update documentation** as needed
-6. **Submit pull request** with clear description
-
-### Documentation Contributions
-
-- README.md improvements for user experience
-- MAKE.md updates for developer workflow
-- Inline code documentation
-- Sample configuration improvements
-
-### Bug Reports
-
-Include in bug reports:
-- Operating system and version
-- Desktop environment
-- Terminal emulator in use
-- Steps to reproduce
-- Expected vs actual behavior
-- Configuration files (sanitized)
-
----
-
-## Troubleshooting Development Issues
-
-### Common Development Problems
-
-**Import errors when running from source:**
+**Test commands:**
 ```bash
-# Solution: Run from project root with proper Python path
-cd /path/to/ssh-tray
-python3 src/ssh_tray.py
+python3 -m py_compile src/ssh_tray/*.py  # Check syntax
+python3 src/ssh_tray.py --help           # Test CLI
+python3 src/ssh_tray.py --version        # Test version
 ```
-
-**GTK/AppIndicator not found:**
-```bash
-# Solution: Install development packages
-sudo apt-get install python3-gi-dev gir1.2-appindicator3-0.1
-```
-
-**Permission denied on scripts:**
-```bash
-# Solution: Make scripts executable
-chmod +x scripts/*.sh
-```
-
-### Debugging Tips
-
-- Use `python3 -v src/ssh_tray.py` for verbose import information
-- Check `~/.ssh_bookmarks` and `~/.ssh_tray_config` for configuration issues
-- Test SSH connections manually before debugging the application
-- Use `ps aux | grep ssh_tray` to check for running instances
 
 ---
 
-## Contact and Support
+## 🎨 Code Standards
 
-**Maintainer**: Vanco Ordanoski  
-**Email**: vordan@infoproject.biz  
-**Company**: Infoproject LLC, North Macedonia  
-**Repository**: https://github.com/vordan/ssh-tray  
-
-For development questions, bug reports, or contributions, please use GitHub Issues or contact the maintainer directly.
+- **Indentation:** Tabs (project standard)
+- **Naming:** snake_case functions, CamelCase classes
+- **Imports:** Relative imports within package
+- **Comments:** Explain what, not what changed
+- **Max lines:** 220-250 per file
 
 ---
 
-## Appendix: Migration from Legacy Version
+## 🚀 Release Process
 
-The project was restructured from a single monolithic file (`ssh_tray.old.py`) to the current modular architecture. Key changes:
+1. **Update version** in `src/ssh_tray/__init__.py`
+2. **Test thoroughly** (install/uninstall/features)  
+3. **Commit changes:** `./scripts/git_commit.sh "v1.x.x"`
+4. **Tag release:** `git tag v1.x.x && git push --tags`
+5. **Users auto-update** via install script
 
-- **Modular Design**: Separated concerns into focused modules
-- **Professional Installation**: Moved from user home to `/opt` installation
-- **CLI Interface**: Added command-line arguments and help system
-- **Comprehensive Uninstaller**: Safe removal with configuration backup
-- **Better Error Handling**: More robust and user-friendly error messages
-- **Development Tools**: Added git workflow and project creation scripts
+---
 
-Legacy configuration files remain compatible, requiring no user migration.
+## 📁 File Architecture
+
+**Core modules:**
+- `main.py` - GTK tray app, signal handling
+- `editor.py` - Main dialog coordinator  
+- `sync.py` - Network sync functionality
+- `dialogs.py` - Add/edit bookmark dialogs
+- `widgets.py` - Reusable UI components
+- `configuration.py` - File I/O, validation
+- `system.py` - Terminal launch, desktop files
+
+**Design:** Modular, testable, maintainable
+
+---
+
+## 🐛 Common Issues
+
+**Import errors:** Run from project root with `python3 src/ssh_tray.py`
+**GTK errors:** Install dev packages: `sudo apt install python3-gi-dev`
+**Sync issues:** Check network, server running on port 9182
+
+---
+
+## 🤝 Contributing
+
+1. **Fork** on GitHub
+2. **Create branch:** `git checkout -b feature-name`
+3. **Follow code standards** above
+4. **Test thoroughly**
+5. **Submit PR** with clear description
+
+---
+
+## 📞 Contact
+
+**Maintainer:** Vanco Ordanoski  
+**Email:** vordan@infoproject.biz  
+**Company:** Infoproject LLC, North Macedonia
+
+---
+
+**Development time: ~2-3 hours for new features • Well-documented modular codebase**
 </file>
 
 <file path="ssh-tray-start.sh">
@@ -4214,372 +4784,167 @@ if __name__ == '__main__':
 <file path="README.md">
 # SSH Bookmark Manager
 
-**Author:** Vanco Ordanoski (<vordan@infoproject.biz>)
-**Company:** Infoproject LLC, North Macedonia
-**License:** MIT
-**Version:** 1.0.0
+**One-click SSH access from your system tray** • *Linux desktop app for managing SSH connections*
+
+![Version](https://img.shields.io/badge/version-1.0.0-blue) ![License](https://img.shields.io/badge/license-MIT-green)
+
+![SSH Tray Menu](docs/images/main-menu.png)
+*Right-click the tray icon to see all your servers organized by groups - click any bookmark to connect instantly*
 
 ---
 
-## Overview
+## ⚡ Quick Start
 
-SSH Bookmark Manager is a Linux tray application for managing SSH bookmarks and groups. It provides quick access to SSH connections through a system tray menu, with support for bookmark organization, multiple terminal emulators, and desktop integration.
-
----
-
-## Features
-
-- **System Tray Integration**: One-click SSH access from the system tray menu
-- **Bookmark Management**: Add, edit, delete, and reorder SSH bookmarks with ease
-- **Group Organization**: Organize bookmarks into named groups with visual separation
-- **Multiple Terminal Support**: Compatible with mate-terminal, gnome-terminal, xfce4-terminal, tilix, konsole, lxterminal, xterm, and custom terminals
-- **Desktop Integration**: Autostart capability and applications menu integration
-- **Simple Configuration**: Plain text configuration files in your home directory
-- **Professional Installation**: Follows Linux FHS (Filesystem Hierarchy Standard) with installation to `/opt`
-
----
-
-## Installation
-
-### Prerequisites
-
-- **Operating System**: Linux (Ubuntu/Mint/Debian/Fedora/etc.)
-- **Python**: Python 3.x with GTK3 bindings
-- **Dependencies**:
-  - `python3-gi` (GTK3 bindings)
-  - `gir1.2-appindicator3-0.1` (AppIndicator3)
-  - `python3-gi-cairo` (Cairo bindings)
-- **Terminal Emulator**: Any supported terminal (mate-terminal, gnome-terminal, etc.)
-
-#### Install Dependencies (Ubuntu/Debian):
-
-```bash
-sudo apt-get update
-sudo apt-get install python3-gi gir1.2-appindicator3-0.1 python3-gi-cairo
-sudo apt-get install mate-terminal gnome-terminal xfce4-terminal xterm
-```
-
-#### Install Dependencies (Fedora):
-
-```bash
-sudo dnf install python3-gobject gtk3-devel libappindicator-gtk3-devel
-sudo dnf install mate-terminal gnome-terminal xfce4-terminal xterm
-```
-
-### Quick Installation
-
-Download and install with a single command:
-
+**Install:**
 ```bash
 curl -fsSL https://raw.githubusercontent.com/vordan/ssh-tray/main/install.sh | bash
 ```
 
-### Manual Installation
+**Run:**
+```bash
+ssh-tray
+```
 
-1. **Download the installer:**
-   ```bash
-   wget https://raw.githubusercontent.com/vordan/ssh-tray/main/scripts/install.sh
-   chmod +x install.sh
-   ```
+**Use:** Right-click tray icon → Add your servers → Click to connect!
 
-2. **Run the installer:**
-   ```bash
-   ./install.sh
-   ```
-
-The installer will:
-- Download the latest version from GitHub
-- Install to `/opt/ssh-tray/` (requires sudo)
-- Create a command-line launcher: `ssh-tray`
-- Set up the uninstaller system
-- Provide access to all features
+![System Tray Icon](docs/images/tray-icon.png)
+*SSH Bookmark Manager sits quietly in your system tray, ready when you need it*
 
 ---
 
-## Usage
+## ✨ Features
 
-### Starting the Application
+- 🖱️ **One-click SSH** from system tray
+- 📁 **Group bookmarks** by project/environment  
+- 🖥️ **Works with any terminal** (mate, gnome, xfce4, etc.)
+- 🔄 **Sync across computers** with your private server
+- ⚙️ **Autostart** and desktop integration
+- 📝 **Simple text config** files
 
+![Bookmark Editor](docs/images/editor-dialog.png)
+*Powerful yet simple editor for managing bookmarks, groups, terminal settings, and sync options*
+
+---
+
+## 📋 Requirements
+
+- **Linux** with system tray (Ubuntu, Mint, Fedora, etc.)
+- **Python 3.6+** with GTK3 bindings
+- **Terminal emulator** (usually pre-installed)
+
+**Install dependencies:**
 ```bash
-# Start the tray application
-ssh-tray
+# Ubuntu/Debian
+sudo apt install python3-gi gir1.2-appindicator3-0.1
 
-# Show help and available commands
-ssh-tray --help
-
-# Show version information
-ssh-tray --version
+# Fedora  
+sudo dnf install python3-gobject libappindicator-gtk3-devel
 ```
 
-### First Run
+---
 
-On first startup, SSH Bookmark Manager will:
-1. Create sample configuration files in your home directory
-2. Display help instructions
-3. Add a tray icon to your system tray
+## 🚀 Usage
 
-### Configuration Files
+### Basic Setup
+1. **Start SSH Tray:** `ssh-tray`
+2. **Right-click tray icon** → "Edit bookmarks/config"
+3. **Add your servers** with the GUI editor
+4. **Click any bookmark** to connect instantly
 
-The application creates these files in your home directory:
-
-- **`~/.ssh_bookmarks`** - Your SSH bookmarks and groups
-- **`~/.ssh_tray_config`** - Terminal emulator and application settings
+![Terminal Connection](docs/images/terminal-ssh.png)
+*SSH connections open in new tabs of your preferred terminal with custom titles*
 
 ### Bookmark Format
-
-Edit `~/.ssh_bookmarks` with your favorite text editor, or use the built-in editor:
-
+Edit `~/.ssh-bookmarks` directly if you prefer:
 ```
-# Comments start with #
------- Development Servers ------
-Dev Server 1	root@192.168.1.10
-Dev Server 2	admin@192.168.1.11:2222
+------ Development ------
+Web Server	user@dev.example.com
+Database	admin@db.dev.example.com:2222
 
------- Production Servers ------
-Web Server	www-data@prod.example.com
-Database	admin@db.example.com
+------ Production ------  
+App Server	deploy@prod.example.com
 ```
 
-**Format Rules:**
-- **Bookmarks**: `DESCRIPTION<tab>user@host[:port]`
-- **Groups**: `------ Group Name ------`
-- **Comments**: Lines starting with `#`
+### Sync Across Computers
+1. **Enable sync** in settings
+2. **Upload bookmarks** → get sync ID
+3. **On other computer:** Download with sync ID
+4. **Done!** Bookmarks synced instantly
 
-### Managing Bookmarks
-
-**Through the Tray Menu:**
-1. Right-click the tray icon
-2. Select "Edit bookmarks/config"
-3. Use the GUI editor to add, edit, delete, and reorder bookmarks
-
-**Through Text Editor:**
-1. Edit `~/.ssh_bookmarks` directly
-2. Restart the application or refresh from the tray menu
+![Sync Settings](docs/images/sync-settings.png)
+*Configure your private sync server and share bookmark configurations across multiple computers*
 
 ---
 
-## Configuration
+## ⚙️ Configuration
 
-### Terminal Emulator
-
-Configure your preferred terminal in `~/.ssh_tray_config`:
-
+**Terminal:** Edit `~/.ssh-tray-config`
 ```
 terminal=mate-terminal
+sync_enabled=true
+sync_server=your-server.com
+sync_port=9182
 ```
 
-**Supported terminals:**
-- `mate-terminal` (MATE desktop)
-- `gnome-terminal` (GNOME desktop)
-- `xfce4-terminal` (XFCE desktop)
-- `tilix` (Modern GTK terminal)
-- `konsole` (KDE desktop)
-- `lxterminal` (LXDE desktop)
-- `xterm` (Universal fallback)
-- Custom path: `/usr/bin/your-terminal`
-
-### Autostart
-
-Enable autostart through the tray menu:
-1. Right-click tray icon → "Edit bookmarks/config"
-2. Toggle the "Autostart" switch
-3. The application will start automatically on login
-
-### Desktop Integration
-
-Add to applications menu:
-1. Right-click tray icon → "Edit bookmarks/config"
-2. Click the applications menu button
-3. SSH Bookmark Manager will appear in your applications menu
+**Supported terminals:** mate-terminal, gnome-terminal, xfce4-terminal, tilix, konsole, lxterminal, xterm
 
 ---
 
-## Project Structure
+## 🔧 Commands
 
-```
-ssh_tray/
-├── INSTALL.md
-├── LICENSE.md
-├── MAKE.md
-├── README.md
-├── archive
-│   └── ssh_tray.old.py
-├── config
-│   ├── ssh_bookmarks.sample.txt
-│   ├── ssh_tray_config.sample.txt
-│   └── ssh_tray_uninstall.desktop
-├── install.sh
-├── repomix.config.json
-├── scripts
-│   ├── git_commit.sh
-│   ├── git_init.sh
-│   ├── github_cli_install.sh
-│   ├── make_ssh_tray_project.sh
-│   └── uninstall.sh
-├── src
-│   ├── ssh_tray
-│   │   ├── __init__.py
-│   │   ├── configuration.py
-│   │   ├── editor.py
-│   │   ├── main.py
-│   │   └── system.py
-│   └── ssh_tray.py
-├── ssh-tray-repomix-output.xml
-├── ssh-tray-start.sh
-└── web
-    └── index.html
+```bash
+ssh-tray                # Start application
+ssh-tray --help         # Show help
+ssh-tray --version      # Show version  
+ssh-tray --uninstall    # Remove application
 ```
 
 ---
 
-## Uninstallation
+## 🗑️ Uninstall
 
-SSH Bookmark Manager provides multiple ways to uninstall:
-
-### Method 1: Command Line (Recommended)
 ```bash
 ssh-tray --uninstall
 ```
-
-### Method 2: Direct Uninstaller
-```bash
-ssh-tray-uninstall
-```
-
-### Method 3: Script Path
-```bash
-/opt/ssh-tray/uninstall.sh
-```
-
-The uninstaller will:
-- Stop any running instances
-- Offer to backup your configuration files to `~/Downloads/`
-- Remove the application from `/opt/ssh-tray/`
-- Remove the command-line launcher
-- Remove desktop integration files
-- Remove your configuration files (optional)
+*Offers to backup your bookmarks before removal*
 
 ---
 
-## Development
-
-### For Developers
-
-**Clone the repository:**
-```bash
-git clone https://github.com/vordan/ssh-tray.git
-cd ssh-tray
-```
+## 🛠️ Development
 
 **Run from source:**
 ```bash
+git clone https://github.com/vordan/ssh-tray.git
+cd ssh-tray
 python3 src/ssh_tray.py
 ```
 
-**Create development project:**
-```bash
-./scripts/make_ssh_tray_project.sh
+**Project structure:**
 ```
-
-### Building and Contributing
-
-**Initialize repository:**
-```bash
-./scripts/git_init.sh
-```
-
-**Commit changes:**
-```bash
-./scripts/git_commit.sh "Your commit message"
-```
-
-**Install GitHub CLI (if needed):**
-```bash
-./scripts/github_cli_install.sh
+src/ssh_tray/          # Main Python package
+├── main.py            # Tray application
+├── editor.py          # Bookmark editor
+├── sync.py            # Cross-computer sync
+└── ...
 ```
 
 ---
 
-## Troubleshooting
+## 📞 Support
 
-### Common Issues
-
-**"Terminal not found" error:**
-- Install your preferred terminal emulator
-- Configure the terminal in `~/.ssh_tray_config`
-- Use the GUI editor to select from available terminals
-
-**Tray icon not appearing:**
-- Ensure AppIndicator3 is installed: `sudo apt install gir1.2-appindicator3-0.1`
-- Check if your desktop supports system tray icons
-- Try restarting the application
-
-**Permission errors:**
-- The application installs to `/opt/ssh-tray/` which requires sudo
-- Your SSH bookmarks are stored in your home directory
-- Make sure you have proper SSH key authentication set up
-
-**SSH connection fails:**
-- Test SSH connection manually: `ssh user@host`
-- Check your SSH keys and authentication
-- Verify the bookmark format: `Description<tab>user@host[:port]`
-
-### Getting Help
-
-**View help:**
-```bash
-ssh-tray --help
-```
-
-**Check version:**
-```bash
-ssh-tray --version
-```
-
-**View instructions:**
-- Right-click tray icon → "Show instructions"
+- **Issues:** [GitHub Issues](https://github.com/vordan/ssh-tray/issues)
+- **Email:** vordan@infoproject.biz
+- **Company:** Infoproject LLC, North Macedonia
 
 ---
 
-## Technical Details
+## 📄 License
 
-- **Language**: Python 3.x
-- **GUI Framework**: GTK3 with AppIndicator3
-- **Configuration**: Plain text files
-- **Installation Location**: `/opt/ssh-tray/` (follows Linux FHS)
-- **Command Access**: `/usr/local/bin/ssh-tray`
-- **Desktop Integration**: XDG desktop files
-- **Autostart**: XDG autostart specification
+MIT License - see [LICENSE.md](LICENSE.md)
 
 ---
 
-## License
-
-MIT License - see [LICENSE.md](LICENSE.md) for details.
-
----
-
-## Contact
-
-**Developer:** Vanco Ordanoski
-**Email:** vordan@infoproject.biz
-**Company:** Infoproject LLC, North Macedonia
-**Repository:** https://github.com/vordan/ssh-tray
-
----
-
-## Changelog
-
-### Version 1.0.0
-- Complete rewrite with modular architecture
-- Professional installation system using `/opt`
-- Command-line interface with `--help`, `--version`, `--uninstall`
-- Comprehensive uninstaller with backup system
-- Enhanced terminal emulator support
-- Improved desktop integration
-- Better error handling and user feedback
-- Sample configuration files
-- Developer-friendly project structure
+**Made with ❤️ for Linux desktop users who love SSH**
 </file>
 
 </files>

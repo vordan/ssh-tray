@@ -12,9 +12,11 @@ This is the main entry point for the SSH Bookmark Manager tray application.
 """
 
 import gi
+import signal
+import sys
 gi.require_version('Gtk', '3.0')
 gi.require_version('AppIndicator3', '0.1')
-from gi.repository import Gtk, AppIndicator3
+from gi.repository import Gtk, AppIndicator3, GLib
 
 from .configuration import (
 	read_config_terminal, ensure_config_files, load_bookmarks, show_instructions
@@ -42,6 +44,19 @@ class SSHTrayApp:
 		self.menu = Gtk.Menu()
 		self.build_menu()
 		self.app.set_menu(self.menu)
+
+		# Set up signal handlers for graceful shutdown
+		self._setup_signal_handlers()
+
+	def _setup_signal_handlers(self):
+		"""Set up signal handlers for graceful shutdown."""
+		def signal_handler(signum, frame):
+			print(f"\nReceived signal {signum}, shutting down gracefully...")
+			GLib.idle_add(self.quit, None)
+
+		# Handle Ctrl+C (SIGINT) and termination (SIGTERM)
+		signal.signal(signal.SIGINT, signal_handler)
+		signal.signal(signal.SIGTERM, signal_handler)
 
 	def build_menu(self):
 		"""Build the tray context menu from bookmarks and add control items."""
@@ -103,23 +118,40 @@ class SSHTrayApp:
 		show_instructions()
 
 	def quit(self, widget):
-		"""Exit the application."""
-		Gtk.main_quit()
+		"""Exit the application gracefully."""
+		print("SSH Bookmark Manager shutting down...")
+		try:
+			# Give time for any pending operations to complete
+			GLib.timeout_add(100, lambda: Gtk.main_quit() or False)
+		except Exception as e:
+			print(f"Error during shutdown: {e}")
+			Gtk.main_quit()
 
 def main():
 	"""Main application entry point."""
-	# Ensure configuration files exist, show help if first run
-	created = ensure_config_files()
+	try:
+		# Ensure configuration files exist, show help if first run
+		created = ensure_config_files()
 
-	# Create and run the tray application
-	app = SSHTrayApp()
+		# Create and run the tray application
+		app = SSHTrayApp()
 
-	# Show instructions on first run
-	if created:
-		show_instructions()
+		# Show instructions on first run
+		if created:
+			show_instructions()
 
-	# Start GTK main loop
-	Gtk.main()
+		print("SSH Bookmark Manager started. Press Ctrl+C to quit gracefully.")
+
+		# Start GTK main loop
+		Gtk.main()
+
+	except KeyboardInterrupt:
+		print("\nShutdown interrupted by user.")
+	except Exception as e:
+		print(f"Error starting SSH Bookmark Manager: {e}")
+		sys.exit(1)
+	finally:
+		print("SSH Bookmark Manager stopped.")
 
 if __name__ == '__main__':
 	main()

@@ -10,6 +10,7 @@ SSH Bookmark Manager Installer
 This script will:
  - Download the latest version of SSH Bookmark Manager from GitHub as a ZIP.
  - Install the project into /opt/ssh-tray (requires sudo).
+ - Generate a unique user ID for sync functionality.
  - Make all scripts executable.
  - Create a launcher script for easy startup.
  - Create a symlink in /usr/local/bin so you can launch 'ssh-tray' from anywhere.
@@ -19,7 +20,6 @@ This script will:
 If you already have /opt/ssh-tray, it will be replaced (after confirmation).
 
 Are you sure you want to CONTINUE? [Y/n]
-===============================================================================
 EOF
 
 read -r ok
@@ -64,6 +64,26 @@ echo "Installing to $INSTALL_DIR ..."
 sudo mv "$REPO_SUBDIR" "$INSTALL_DIR"
 sudo chown -R root:root "$INSTALL_DIR"
 
+# Generate unique user ID for sync functionality
+echo "Generating unique user ID for sync functionality..."
+if command -v openssl >/dev/null 2>&1; then
+	USER_ID=$(openssl rand -hex 8)
+elif command -v xxd >/dev/null 2>&1 && [ -r /dev/urandom ]; then
+	USER_ID=$(head -c 8 /dev/urandom | xxd -p)
+else
+	# Fallback method using date and hostname
+	USER_ID=$(echo "${HOSTNAME}$(date +%s)" | sha256sum | cut -c1-16)
+fi
+
+echo "Creating user ID file..."
+sudo tee "$INSTALL_DIR/.user_id" > /dev/null <<EOF2
+user_id=$USER_ID
+created=$(date -Iseconds)
+hostname=$(hostname)
+EOF2
+sudo chmod 644 "$INSTALL_DIR/.user_id"
+echo "Generated sync user ID: $USER_ID"
+
 # Make Python scripts executable
 sudo chmod +x "$INSTALL_DIR/$MAIN_LAUNCHER"
 sudo find "$INSTALL_DIR/src" -name "*.py" -exec sudo chmod +x {} \;
@@ -106,9 +126,13 @@ echo "    $BIN_NAME --version      Show version information"
 echo "    $BIN_NAME --uninstall    Uninstall the application"
 echo "    ssh-tray-uninstall       Direct uninstaller access"
 echo
+echo "Sync functionality:"
+echo "    User ID: $USER_ID"
+echo "    Configure sync server in the application settings"
+echo
 echo "The application will create configuration files in your home directory:"
-echo "    ~/.ssh_bookmarks     (your SSH bookmarks)"
-echo "    ~/.ssh_tray_config   (terminal preferences)"
+echo "    ~/.ssh-bookmarks     (your SSH bookmarks)"
+echo "    ~/.ssh-tray-config   (terminal and sync preferences)"
 echo
 echo "To edit bookmarks/config, use the tray menu when the app is running."
 echo
