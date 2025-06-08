@@ -1,0 +1,39 @@
+# SSH Bookmark Manager - Sample Bookmarks File
+# Copy this to ~/.ssh_bookmarks and customize for your servers
+#
+# Format:
+#   - Bookmarks: DESCRIPTION<tab>user@host[:port]
+#   - Groups: ------ Group Name ------
+#   - Comments: Lines starting with #
+#
+# Example bookmarks:
+
+------ Development Servers ------
+Dev Server 1	root@192.168.1.10
+Dev Server 2	admin@192.168.1.11
+Database Dev	postgres@192.168.1.20:5432
+
+------ Production Servers ------
+Web Server	www-data@prod.example.com
+Database	admin@db.example.com
+Load Balancer	root@lb.example.com
+
+------ Personal Servers ------
+Home Server	user@home.example.com:2222
+VPS Instance	root@vps.example.com
+Backup Server	backup@backup.example.com
+
+------ Client Sites ------
+Client A Web	deploy@clienta.com
+Client A DB	root@db.clienta.com
+Client B	admin@clientb.net
+
+# You can also use IP addresses with custom ports:
+# My Router	admin@192.168.1.1:22
+# Custom Port Server	user@server.com:2200
+
+# Tips:
+# - Keep descriptions short but descriptive
+# - Group related servers together
+# - Use consistent naming conventions
+# - Test connections manually before adding bookmarks

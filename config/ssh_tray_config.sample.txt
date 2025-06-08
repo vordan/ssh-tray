@@ -1,0 +1,30 @@
+# SSH Bookmark Manager - Sample Configuration File
+# Copy this to ~/.ssh_tray_config and customize for your system
+#
+# This file contains settings for the SSH Bookmark Manager application.
+
+# Terminal Emulator Setting
+# Specify which terminal emulator to use for SSH connections
+# Supported terminals: mate-terminal, gnome-terminal, xfce4-terminal, tilix, konsole, lxterminal, xterm
+# You can also specify a full path to a custom terminal
+terminal=mate-terminal
+
+# Examples for different desktop environments:
+# terminal=gnome-terminal    # For GNOME desktop
+# terminal=xfce4-terminal    # For XFCE desktop
+# terminal=mate-terminal     # For MATE desktop
+# terminal=konsole           # For KDE desktop
+# terminal=tilix             # For modern GTK terminal
+# terminal=lxterminal        # For LXDE desktop
+# terminal=xterm             # Fallback terminal
+
+# Custom terminal examples:
+# terminal=/usr/bin/gnome-terminal
+# terminal=/opt/custom-terminal/bin/terminal
+# terminal=kitty             # If kitty terminal is in PATH
+
+# Notes:
+# - The terminal must be installed and available in your PATH
+# - If the specified terminal is not found, the application will try to use a fallback
+# - Some terminals may have different command-line argument formats
+# - Test your terminal choice by running it manually before configuring
