@@ -51,21 +51,21 @@ function file_exists_and_not_empty() {
 # Function: Stop the application if running
 function stop_application() {
 	echo "Checking if SSH Bookmark Manager is running..."
-	
+
 	# Find and kill any running instances
 	PIDS=$(pgrep -f "ssh_tray" 2>/dev/null || true)
 	if [[ -n "$PIDS" ]]; then
 		echo "Found running SSH Bookmark Manager processes: $PIDS"
 		if confirm "Stop running SSH Bookmark Manager processes?"; then
 			echo "Stopping SSH Bookmark Manager..."
-			pkill -f "ssh_tray" 2>/dev/null || true
+			pkill -f "ssh_tray" -u "$(id -u)" 2>/dev/null || true
 			sleep 2
-			
+
 			# Force kill if still running
 			PIDS=$(pgrep -f "ssh_tray" 2>/dev/null || true)
 			if [[ -n "$PIDS" ]]; then
 				echo "Force stopping remaining processes..."
-				pkill -9 -f "ssh_tray" 2>/dev/null || true
+				pkill -9 -f "ssh_tray" -u "$(id -u)" 2>/dev/null || true
 			fi
 			echo "✓ SSH Bookmark Manager stopped"
 		else
@@ -79,35 +79,35 @@ function stop_application() {
 # Function: Backup configuration files
 function backup_config_files() {
 	local backup_needed=false
-	
+
 	# Check if any config files exist and are not empty
 	if file_exists_and_not_empty "$BOOKMARKS_FILE"; then
 		echo "✓ Found bookmarks file with content: $BOOKMARKS_FILE"
 		backup_needed=true
 	fi
-	
+
 	if file_exists_and_not_empty "$CONFIG_FILE"; then
 		echo "✓ Found config file with content: $CONFIG_FILE"
 		backup_needed=true
 	fi
-	
+
 	if [[ "$backup_needed" == "true" ]]; then
 		echo
 		echo "You have SSH bookmarks and/or configuration files that will be deleted."
 		if confirm "Create backup of your configuration files before deletion?"; then
 			echo "Creating backup directory: $BACKUP_DIR"
 			mkdir -p "$BACKUP_DIR"
-			
+
 			if file_exists_and_not_empty "$BOOKMARKS_FILE"; then
 				cp "$BOOKMARKS_FILE" "$BACKUP_DIR/"
 				echo "✓ Backed up: $(basename "$BOOKMARKS_FILE")"
 			fi
-			
+
 			if file_exists_and_not_empty "$CONFIG_FILE"; then
 				cp "$CONFIG_FILE" "$BACKUP_DIR/"
 				echo "✓ Backed up: $(basename "$CONFIG_FILE")"
 			fi
-			
+
 			echo "✓ Configuration backup created in: $BACKUP_DIR"
 			echo
 		fi
@@ -119,7 +119,7 @@ function backup_config_files() {
 # Function: Remove application files
 function remove_application() {
 	echo "Removing application files..."
-	
+
 	# Remove symlink
 	if [[ -L "$BIN_SYMLINK" ]]; then
 		echo "Removing symlink: $BIN_SYMLINK"
@@ -132,7 +132,7 @@ function remove_application() {
 	else
 		echo "ℹ Symlink not found: $BIN_SYMLINK"
 	fi
-	
+
 	# Remove installation directory
 	if [[ -d "$INSTALL_DIR" ]]; then
 		echo "Removing installation directory: $INSTALL_DIR"
@@ -146,7 +146,7 @@ function remove_application() {
 # Function: Remove user files
 function remove_user_files() {
 	echo "Removing user configuration and desktop files..."
-	
+
 	# Remove desktop file
 	if [[ -f "$DESKTOP_FILE" ]]; then
 		rm -f "$DESKTOP_FILE"
@@ -154,7 +154,7 @@ function remove_user_files() {
 	else
 		echo "ℹ Desktop file not found"
 	fi
-	
+
 	# Remove autostart file
 	if [[ -f "$AUTOSTART_FILE" ]]; then
 		rm -f "$AUTOSTART_FILE"
@@ -162,7 +162,7 @@ function remove_user_files() {
 	else
 		echo "ℹ Autostart file not found"
 	fi
-	
+
 	# Remove config files
 	if [[ -f "$BOOKMARKS_FILE" ]]; then
 		rm -f "$BOOKMARKS_FILE"
@@ -170,7 +170,7 @@ function remove_user_files() {
 	else
 		echo "ℹ Bookmarks file not found"
 	fi
-	
+
 	if [[ -f "$CONFIG_FILE" ]]; then
 		rm -f "$CONFIG_FILE"
 		echo "✓ Config file removed: $CONFIG_FILE"

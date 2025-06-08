@@ -12,8 +12,8 @@ import os
 import shutil
 from .system import show_notification, available_terminals
 
-BOOKMARKS_FILE = os.path.expanduser('~/.ssh_bookmarks')
-CONFIG_FILE = os.path.expanduser('~/.ssh_tray_config')
+BOOKMARKS_FILE = os.path.expanduser('~/.ssh-bookmarks')
+CONFIG_FILE = os.path.expanduser('~/.ssh-tray-config')
 
 def ensure_config_files():
 	"""Create default configuration files if they don't exist.
@@ -125,9 +125,21 @@ def validate_bookmark_line(line):
 	if len(parts) == 2:
 		label, ssh_target = parts
 		# Validate SSH target contains username@host
+		# Enhanced validation
 		if '@' in ssh_target:
-			return (label, ssh_target)
-
+			# Validate SSH target format: user@host[:port]
+			import re
+			pattern = r'^[a-zA-Z0-9\-._]+@[a-zA-Z0-9\-._]+(?::\d{1,5})?$'
+			if re.match(pattern, ssh_target):
+				# Validate port range if specified
+				if ':' in ssh_target:
+					try:
+						port = int(ssh_target.split(':')[-1])
+						if not (1 <= port <= 65535):
+							return None
+					except ValueError:
+						return None
+				return (label, ssh_target)
 	return None
 
 def load_bookmarks():

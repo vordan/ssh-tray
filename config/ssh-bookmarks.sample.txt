@@ -1,5 +1,5 @@
 # SSH Bookmark Manager - Sample Bookmarks File
-# Copy this to ~/.ssh_bookmarks and customize for your servers
+# Copy this to ~/.ssh-bookmarks and customize for your servers
 #
 # Format:
 #   - Bookmarks: DESCRIPTION<tab>user@host[:port]

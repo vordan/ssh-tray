@@ -1,5 +1,5 @@
 # SSH Bookmark Manager - Sample Configuration File
-# Copy this to ~/.ssh_tray_config and customize for your system
+# Copy this to ~/.ssh-tray-config and customize for your system
 #
 # This file contains settings for the SSH Bookmark Manager application.
 

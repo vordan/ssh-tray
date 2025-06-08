@@ -48,9 +48,9 @@ The content is organized as follows:
 archive/
   ssh_tray.old.py
 config/
-  ssh_bookmarks.sample.txt
-  ssh_tray_config.sample.txt
-  ssh_tray_uninstall.desktop
+  ssh-bookmarks.sample.txt
+  ssh-tray-config.sample.txt
+  ssh-tray-uninstall.desktop
 scripts/
   git_commit.sh
   git_init.sh
@@ -78,6 +78,1152 @@ ssh-tray-start.sh
 
 <files>
 This section contains the contents of the repository's files.
+
+<file path="config/ssh-bookmarks.sample.txt">
+# SSH Bookmark Manager - Sample Bookmarks File
+# Copy this to ~/.ssh_bookmarks and customize for your servers
+#
+# Format:
+#   - Bookmarks: DESCRIPTION<tab>user@host[:port]
+#   - Groups: ------ Group Name ------
+#   - Comments: Lines starting with #
+#
+# Example bookmarks:
+
+------ Development Servers ------
+Dev Server 1	root@192.168.1.10
+Dev Server 2	admin@192.168.1.11
+Database Dev	postgres@192.168.1.20:5432
+
+------ Production Servers ------
+Web Server	www-data@prod.example.com
+Database	admin@db.example.com
+Load Balancer	root@lb.example.com
+
+------ Personal Servers ------
+Home Server	user@home.example.com:2222
+VPS Instance	root@vps.example.com
+Backup Server	backup@backup.example.com
+
+------ Client Sites ------
+Client A Web	deploy@clienta.com
+Client A DB	root@db.clienta.com
+Client B	admin@clientb.net
+
+# You can also use IP addresses with custom ports:
+# My Router	admin@192.168.1.1:22
+# Custom Port Server	user@server.com:2200
+
+# Tips:
+# - Keep descriptions short but descriptive
+# - Group related servers together
+# - Use consistent naming conventions
+# - Test connections manually before adding bookmarks
+</file>
+
+<file path="config/ssh-tray-config.sample.txt">
+# SSH Bookmark Manager - Sample Configuration File
+# Copy this to ~/.ssh_tray_config and customize for your system
+#
+# This file contains settings for the SSH Bookmark Manager application.
+
+# Terminal Emulator Setting
+# Specify which terminal emulator to use for SSH connections
+# Supported terminals: mate-terminal, gnome-terminal, xfce4-terminal, tilix, konsole, lxterminal, xterm
+# You can also specify a full path to a custom terminal
+terminal=mate-terminal
+
+# Examples for different desktop environments:
+# terminal=gnome-terminal    # For GNOME desktop
+# terminal=xfce4-terminal    # For XFCE desktop
+# terminal=mate-terminal     # For MATE desktop
+# terminal=konsole           # For KDE desktop
+# terminal=tilix             # For modern GTK terminal
+# terminal=lxterminal        # For LXDE desktop
+# terminal=xterm             # Fallback terminal
+
+# Custom terminal examples:
+# terminal=/usr/bin/gnome-terminal
+# terminal=/opt/custom-terminal/bin/terminal
+# terminal=kitty             # If kitty terminal is in PATH
+
+# Notes:
+# - The terminal must be installed and available in your PATH
+# - If the specified terminal is not found, the application will try to use a fallback
+# - Some terminals may have different command-line argument formats
+# - Test your terminal choice by running it manually before configuring
+</file>
+
+<file path="config/ssh-tray-uninstall.desktop">
+[Desktop Entry]
+Type=Application
+Name=Uninstall SSH Bookmark Manager
+Exec=ssh-tray --uninstall
+Icon=application-exit
+Terminal=true
+Categories=System;Settings;
+Comment=Remove SSH Bookmark Manager from your system
+Keywords=uninstall;remove;ssh;bookmark;tray;
+StartupNotify=false
+NoDisplay=false
+</file>
+
+<file path="archive/ssh_tray.old.py">
+#!/usr/bin/env python3
+"""
+===============================================================================
+SSH Bookmark Manager
+Company:    Infoproject LLC, North Macedonia
+Developer:  Vanco Ordanoski - vordan@infoproject.biz
+Support:    support@infoproject.biz
+
+License:    MIT License (see below)
+-------------------------------------------------------------------------------
+Description:
+    SSH Bookmark Manager is a Linux tray application for managing SSH bookmarks.
+    - Provides a tray menu with one-click SSH access to saved hosts/groups.
+    - Supports bookmarks grouping, reorder, easy add/edit/delete, and configuration.
+    - Configurable terminal emulator support (mate-terminal, gnome-terminal, etc.).
+    - Bookmarks and config are saved as simple text files in your home folder.
+    - Autostart and .desktop launcher integration are supported.
+    - Designed for Linux Mint/Ubuntu/Cinnamon/MATE/XFCE/other desktops.
+-------------------------------------------------------------------------------
+Usage:
+    1. Run ./ssh_tray.py &
+    2. Edit your SSH bookmarks and terminal preferences from the tray menu.
+    3. Use the tray icon to launch SSH sessions in your chosen terminal.
+    4. Optionally, enable autostart and add a menu shortcut.
+
+Files:
+    - ~/.ssh_bookmarks      List of bookmarks (one per line; group lines supported)
+    - ~/.ssh_tray_config    Terminal emulator and settings (see examples)
+    - ~/.config/autostart/ssh_tray.desktop (autostart link, if enabled)
+    - ~/.local/share/applications/ssh_tray.desktop (menu launcher, if added)
+
+Dependencies:
+    - Python 3.x
+    - python3-gi (GTK and AppIndicator bindings)
+    - Supported terminal emulator (mate-terminal, gnome-terminal, xfce4-terminal, etc.)
+
+MIT License:
+    Permission is hereby granted, free of charge, to any person obtaining a copy
+    of this software and associated documentation files (the "Software"), to deal
+    in the Software without restriction, including without limitation the rights
+    to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+    copies of the Software, and to permit persons to whom the Software is
+    furnished to do so, subject to the following conditions:
+    The above copyright notice and this permission notice shall be included in
+    all copies or substantial portions of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+    OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+    THE SOFTWARE.
+===============================================================================
+"""
+
+import gi
+import subprocess
+import os
+import shutil
+
+gi.require_version('Gtk', '3.0')
+gi.require_version('AppIndicator3', '0.1')
+from gi.repository import Gtk, AppIndicator3
+
+BOOKMARKS_FILE = os.path.expanduser('~/.ssh_bookmarks')
+CONFIG_FILE = os.path.expanduser('~/.ssh_tray_config')
+DESKTOP_FILE = os.path.expanduser('~/.local/share/applications/ssh_tray.desktop')
+AUTOSTART_DIR = os.path.expanduser('~/.config/autostart')
+AUTOSTART_FILE = os.path.join(AUTOSTART_DIR, 'ssh_tray.desktop')
+
+SUPPORTED_TERMINALS = [
+	'mate-terminal', 'gnome-terminal', 'xfce4-terminal', 'tilix',
+	'konsole', 'lxterminal', 'xterm'
+]
+
+ICON_NAME = 'network-server'
+
+def ensure_config_files():
+	created = False
+	if not os.path.exists(CONFIG_FILE):
+		with open(CONFIG_FILE, 'w') as f:
+			f.write('terminal=mate-terminal\n')
+		created = True
+	if not os.path.exists(BOOKMARKS_FILE):
+		with open(BOOKMARKS_FILE, 'w') as f:
+			f.write('# Example SSH bookmarks:\n')
+			f.write('------ Dev Servers ------\n')
+			f.write('Dev 1 [10.10.10.98]\troot@10.10.10.98\n')
+			f.write('Dev 2 [10.10.11.22]\troot@10.10.11.22\n')
+			f.write('------ Production ------\n')
+			f.write('Prod DB\tadmin@192.168.1.5\n')
+		created = True
+	return created
+
+def show_instructions(parent=None):
+	text = (
+		"SSH Bookmark Manager Help\n\n"
+		"Bookmarks: {}\n"
+		"Config: {}\n\n"
+		"How to use:\n"
+		" - Each line in the bookmarks file is either:\n"
+		"     * a bookmark: DESCRIPTION<tab>user@host[:port]\n"
+		"     * a group header: a line with dashes, e.g. '------ Group Name ------'\n"
+		" - Set your terminal in the config file (e.g. 'terminal=mate-terminal').\n"
+		" - Edit everything using the tray editor, or a text editor if you prefer.\n"
+		" - Use the tray icon to launch SSH, edit bookmarks, show help, or configure autostart.\n"
+		" - For menu or autostart integration, see configuration in the tray menu."
+	).format(BOOKMARKS_FILE, CONFIG_FILE)
+	dialog = Gtk.MessageDialog(
+		parent=parent, modal=True, message_type=Gtk.MessageType.INFO,
+		buttons=Gtk.ButtonsType.OK, text="SSH Bookmark Manager - Instructions")
+	dialog.format_secondary_text(text)
+	dialog.set_border_width(20)
+	dialog.connect("response", lambda d, r: d.destroy())
+	dialog.connect("delete-event", lambda d, e: d.destroy() or False)
+	dialog.show_all()
+	dialog.run()
+	dialog.destroy()
+
+def available_terminals():
+	return [t for t in SUPPORTED_TERMINALS if shutil.which(t)]
+
+def read_config_terminal():
+	terminal = 'mate-terminal'
+	if os.path.exists(CONFIG_FILE):
+		with open(CONFIG_FILE) as f:
+			for line in f:
+				line = line.strip()
+				if line.startswith('terminal='):
+					val = line.split('=', 1)[1].strip()
+					if val:
+						terminal = val
+					break
+	if not (os.path.isabs(terminal) and os.access(terminal, os.X_OK)) and shutil.which(terminal) is None:
+		show_notification(f"Terminal '{terminal}' not found in PATH.\nPlease select or set a valid terminal in the configuration.")
+		avail = available_terminals()
+		if avail:
+			terminal = avail[0]
+		else:
+			terminal = 'xterm'
+	return terminal
+
+def validate_bookmark_line(line):
+	line = line.strip()
+	if not line or line.startswith('#'):
+		return None
+	if line.startswith('-') and line.endswith('-') and len(line) > 3:
+		return ('__GROUP__', line.strip('- ').strip())
+	parts = line.rsplit(None, 1)
+	if len(parts) == 2:
+		label, ssh_target = parts
+		if '@' in ssh_target:
+			return (label, ssh_target)
+	return None
+
+def load_bookmarks():
+	bookmarks = []
+	errors = []
+	if os.path.exists(BOOKMARKS_FILE):
+		with open(BOOKMARKS_FILE, 'r') as f:
+			for idx, line in enumerate(f):
+				result = validate_bookmark_line(line)
+				if result:
+					bookmarks.append(result)
+				elif line.strip() and not line.strip().startswith('#'):
+					errors.append(f"Line {idx+1}: '{line.strip()}'")
+	if errors:
+		show_notification("Invalid lines in bookmarks file:\n" + "\n".join(errors))
+	return bookmarks
+
+def save_bookmarks(bookmarks):
+	with open(BOOKMARKS_FILE, 'w') as f:
+		for label, ssh_target in bookmarks:
+			if label == '__GROUP__':
+				f.write(f"------ {ssh_target} ------\n")
+			else:
+				f.write(f"{label}\t{ssh_target}\n")
+
+def open_ssh_in_terminal(terminal, ssh_target, label):
+	try:
+		terminal_exec = terminal
+		if os.path.isabs(terminal) and os.access(terminal, os.X_OK):
+			pass
+		else:
+			terminal_exec = shutil.which(terminal) or terminal
+		if 'mate-terminal' in terminal_exec:
+			cmd = [
+				terminal_exec, '--tab', '--title', label, '--',
+				'bash', '-c', f'ssh {ssh_target}; exec bash'
+			]
+		elif 'xfce4-terminal' in terminal_exec:
+			cmd = [
+				terminal_exec, '--tab', '--title', label, '--command',
+				f'ssh {ssh_target}'
+			]
+		elif 'gnome-terminal' in terminal_exec:
+			cmd = [
+				terminal_exec, '--tab', '--title', label, '--', 'ssh', ssh_target
+			]
+		elif 'xterm' in terminal_exec:
+			cmd = [
+				terminal_exec, '-T', label, '-e', f'ssh {ssh_target}'
+			]
+		else:
+			cmd = [terminal_exec, '-e', f'ssh {ssh_target}']
+		subprocess.Popen(cmd)
+	except Exception as e:
+		show_notification(f"Failed to launch terminal.\n{e}")
+
+def create_desktop_file(exec_path):
+	contents = f"""[Desktop Entry]
+Type=Application
+Name=SSH Bookmark Manager
+Exec={exec_path}
+Icon={ICON_NAME}
+Terminal=false
+Categories=Utility;Network;
+Comment=SSH tray bookmarks and launcher
+"""
+	os.makedirs(os.path.dirname(DESKTOP_FILE), exist_ok=True)
+	with open(DESKTOP_FILE, 'w') as f:
+		f.write(contents)
+	os.chmod(DESKTOP_FILE, 0o755)
+
+def add_to_autostart(enable=True):
+	if enable:
+		os.makedirs(AUTOSTART_DIR, exist_ok=True)
+		shutil.copy(DESKTOP_FILE, AUTOSTART_FILE)
+	else:
+		if os.path.exists(AUTOSTART_FILE):
+			os.remove(AUTOSTART_FILE)
+
+def is_autostart_enabled():
+	return os.path.exists(AUTOSTART_FILE)
+
+def show_notification(message, parent=None):
+	dialog = Gtk.MessageDialog(
+		parent=parent, modal=True, message_type=Gtk.MessageType.INFO,
+		buttons=Gtk.ButtonsType.OK, text=message)
+	dialog.set_border_width(20)
+	dialog.connect("response", lambda d, r: d.destroy())
+	dialog.connect("delete-event", lambda d, e: d.destroy() or False)
+	dialog.show_all()
+	dialog.run()
+	dialog.destroy()
+
+class EditBookmarksDialog(Gtk.Dialog):
+	def __init__(self, parent, bookmarks, terminal, on_change_callback):
+		Gtk.Dialog.__init__(self, title="Edit SSH Bookmarks and Configuration", transient_for=parent, modal=True)
+		self.set_border_width(20)
+		self.set_default_size(650, 500)
+		self.bookmarks = [list(item) for item in bookmarks]
+		self.terminal = terminal
+		self.on_change_callback = on_change_callback
+
+		box = self.get_content_area()
+
+		# Subtitle
+		subtitle = Gtk.Label()
+		subtitle.set_text(
+			"Here you can add, remove, group, and reorder SSH bookmarks, and configure your terminal and autostart options.")
+		subtitle.set_justify(Gtk.Justification.LEFT)
+		subtitle.set_halign(Gtk.Align.START)
+		subtitle.set_margin_top(16)
+		subtitle.set_margin_bottom(16)
+		box.pack_start(subtitle, False, False, 0)
+
+		# Terminal selector section
+		term_box = Gtk.Box(spacing=6)
+		term_label = Gtk.Label(label="Terminal:")
+		self.term_combo = Gtk.ComboBoxText()
+		for t in available_terminals():
+			self.term_combo.append_text(t)
+		self.term_combo.set_active(
+			available_terminals().index(self.terminal)
+			if self.terminal in available_terminals() else -1)
+		self.term_entry = Gtk.Entry()
+		self.term_entry.set_text(self.terminal)
+		self.term_combo.connect("changed", self.on_term_combo_changed)
+		term_box.pack_start(term_label, False, False, 0)
+		term_box.pack_start(self.term_combo, False, False, 0)
+		term_box.pack_start(self.term_entry, True, True, 0)
+		save_icon = Gtk.Image.new_from_icon_name("document-save", Gtk.IconSize.BUTTON)
+		save_btn = Gtk.Button()
+		save_btn.set_image(save_icon)
+		save_btn.set_tooltip_text("Save terminal")
+		save_btn.connect("clicked", self.on_save_terminal)
+		help_icon = Gtk.Image.new_from_icon_name("help-about", Gtk.IconSize.BUTTON)
+		help_btn = Gtk.Button()
+		help_btn.set_image(help_icon)
+		help_btn.set_tooltip_text("Help: Supported terminals")
+		help_btn.connect("clicked", self.on_help_terminal)
+		term_box.pack_start(save_btn, False, False, 0)
+		term_box.pack_start(help_btn, False, False, 0)
+		box.pack_start(term_box, False, False, 10)
+
+		# TreeView for bookmarks/groups
+		self.liststore = Gtk.ListStore(str, str)
+		for label, target in self.bookmarks:
+			self.liststore.append([label, target])
+		self.treeview = Gtk.TreeView(model=self.liststore)
+		renderer_text = Gtk.CellRendererText()
+		column_label = Gtk.TreeViewColumn("Description / Group", renderer_text, text=0)
+		column_target = Gtk.TreeViewColumn("SSH Target", renderer_text, text=1)
+		self.treeview.append_column(column_label)
+		self.treeview.append_column(column_target)
+		scrolled_window = Gtk.ScrolledWindow()
+		scrolled_window.set_border_width(5)
+		scrolled_window.set_vexpand(True)
+		scrolled_window.add(self.treeview)
+		box.pack_start(scrolled_window, True, True, 10)
+
+		# Add/Edit/Delete/Group/Up/Down buttons, all with icons
+		button_box = Gtk.Box(spacing=8)
+		self.add_btn = Gtk.Button()
+		self.add_btn.set_image(Gtk.Image.new_from_icon_name("list-add", Gtk.IconSize.BUTTON))
+		self.add_btn.set_tooltip_text("Add bookmark")
+		self.add_btn.connect("clicked", self.on_add)
+
+		self.edit_btn = Gtk.Button()
+		self.edit_btn.set_image(Gtk.Image.new_from_icon_name("document-edit", Gtk.IconSize.BUTTON))
+		self.edit_btn.set_tooltip_text("Edit selected")
+		self.edit_btn.connect("clicked", self.on_edit)
+
+		self.del_btn = Gtk.Button()
+		self.del_btn.set_image(Gtk.Image.new_from_icon_name("edit-delete", Gtk.IconSize.BUTTON))
+		self.del_btn.set_tooltip_text("Delete selected")
+		self.del_btn.connect("clicked", self.on_delete)
+
+		self.grp_btn = Gtk.Button()
+		self.grp_btn.set_image(Gtk.Image.new_from_icon_name("folder-new", Gtk.IconSize.BUTTON))
+		self.grp_btn.set_tooltip_text("Add group")
+		self.grp_btn.connect("clicked", self.on_add_group)
+
+		self.up_btn = Gtk.Button()
+		self.up_btn.set_image(Gtk.Image.new_from_icon_name("go-up", Gtk.IconSize.BUTTON))
+		self.up_btn.set_tooltip_text("Move up")
+		self.up_btn.connect("clicked", self.on_move_up)
+
+		self.down_btn = Gtk.Button()
+		self.down_btn.set_image(Gtk.Image.new_from_icon_name("go-down", Gtk.IconSize.BUTTON))
+		self.down_btn.set_tooltip_text("Move down")
+		self.down_btn.connect("clicked", self.on_move_down)
+
+		for btn in [self.add_btn, self.edit_btn, self.del_btn, self.grp_btn, self.up_btn, self.down_btn]:
+			button_box.pack_start(btn, False, False, 0)
+		box.pack_start(button_box, False, False, 10)
+
+		# Autostart and desktop integration
+		opt_box = Gtk.Box(spacing=8)
+		self.autostart_switch = Gtk.Switch()
+		self.autostart_switch.set_active(is_autostart_enabled())
+		self.autostart_switch.connect("notify::active", self.on_autostart_toggle)
+		opt_box.pack_start(Gtk.Label(label="Autostart:"), False, False, 0)
+		opt_box.pack_start(self.autostart_switch, False, False, 0)
+		desktop_btn = Gtk.Button()
+		desktop_btn.set_image(Gtk.Image.new_from_icon_name("applications-internet", Gtk.IconSize.BUTTON))
+		desktop_btn.set_tooltip_text("Add to Menu (.desktop)")
+		desktop_btn.connect("clicked", self.on_add_to_menu)
+		opt_box.pack_start(desktop_btn, False, False, 0)
+		box.pack_start(opt_box, False, False, 8)
+
+		self.show_all()
+
+	def _save_and_refresh(self):
+		bookmarks = self.get_bookmarks()
+		save_bookmarks(bookmarks)
+		if self.on_change_callback:
+			self.on_change_callback()
+		return bookmarks
+
+	def on_term_combo_changed(self, combo):
+		text = combo.get_active_text()
+		if text:
+			self.term_entry.set_text(text)
+
+	def on_save_terminal(self, button):
+		terminal = self.term_entry.get_text().strip()
+		if not terminal:
+			show_notification("Please enter a terminal command.", parent=self)
+			return
+		with open(CONFIG_FILE, 'w') as f:
+			f.write(f'terminal={terminal}\n')
+		self.terminal = terminal
+		show_notification(f"Terminal set to '{terminal}'.", parent=self)
+
+	def on_help_terminal(self, button):
+		text = (
+			"Supported terminals:\n"
+			"  mate-terminal, gnome-terminal, xfce4-terminal, tilix, konsole, lxterminal, xterm\n"
+			"You can also enter a full path or custom terminal command. The terminal must be in your $PATH."
+		)
+		show_notification(text, parent=self)
+
+	def on_add(self, button):
+		dialog = Gtk.Dialog(
+			title="Add Bookmark", transient_for=self, modal=True)
+		dialog.set_border_width(20)
+		dialog.add_buttons(Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL,
+						   Gtk.STOCK_OK, Gtk.ResponseType.OK)
+		box = dialog.get_content_area()
+		label_entry = Gtk.Entry()
+		label_entry.set_placeholder_text("Description")
+		target_entry = Gtk.Entry()
+		target_entry.set_placeholder_text("user@host[:port]")
+		box.pack_start(Gtk.Label(label="Description:"), False, False, 0)
+		box.pack_start(label_entry, False, False, 0)
+		box.pack_start(Gtk.Label(label="SSH Target:"), False, False, 0)
+		box.pack_start(target_entry, False, False, 0)
+		box.set_border_width(20)
+		dialog.show_all()
+		resp = dialog.run()
+		if resp == Gtk.ResponseType.OK:
+			label = label_entry.get_text().strip()
+			target = target_entry.get_text().strip()
+			if label and target and '@' in target:
+				self.liststore.append([label, target])
+				self._save_and_refresh()
+		dialog.destroy()
+
+	def on_edit(self, button):
+		selection = self.treeview.get_selection()
+		model, treeiter = selection.get_selected()
+		if treeiter:
+			label_old = model[treeiter][0]
+			target_old = model[treeiter][1]
+			if label_old == '__GROUP__':
+				dialog = Gtk.Dialog(
+					title="Edit Group", transient_for=self, modal=True)
+				dialog.set_border_width(20)
+				dialog.add_buttons(Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL,
+								   Gtk.STOCK_OK, Gtk.ResponseType.OK)
+				box = dialog.get_content_area()
+				label_entry = Gtk.Entry()
+				label_entry.set_text(target_old)
+				box.pack_start(Gtk.Label(label="Group Name:"), False, False, 0)
+				box.pack_start(label_entry, False, False, 0)
+				box.set_border_width(20)
+				dialog.show_all()
+				resp = dialog.run()
+				if resp == Gtk.ResponseType.OK:
+					label = label_entry.get_text().strip()
+					if label:
+						model[treeiter][1] = label
+						self._save_and_refresh()
+				dialog.destroy()
+			else:
+				dialog = Gtk.Dialog(
+					title="Edit Bookmark", transient_for=self, modal=True)
+				dialog.set_border_width(20)
+				dialog.add_buttons(Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL,
+								   Gtk.STOCK_OK, Gtk.ResponseType.OK)
+				box = dialog.get_content_area()
+				label_entry = Gtk.Entry()
+				label_entry.set_text(label_old)
+				target_entry = Gtk.Entry()
+				target_entry.set_text(target_old)
+				box.pack_start(Gtk.Label(label="Description:"), False, False, 0)
+				box.pack_start(label_entry, False, False, 0)
+				box.pack_start(Gtk.Label(label="SSH Target:"), False, False, 0)
+				box.pack_start(target_entry, False, False, 0)
+				box.set_border_width(20)
+				dialog.show_all()
+				resp = dialog.run()
+				if resp == Gtk.ResponseType.OK:
+					label = label_entry.get_text().strip()
+					target = target_entry.get_text().strip()
+					if label and target and '@' in target:
+						model[treeiter][0] = label
+						model[treeiter][1] = target
+						self._save_and_refresh()
+				dialog.destroy()
+
+	def on_delete(self, button):
+		selection = self.treeview.get_selection()
+		model, treeiter = selection.get_selected()
+		if treeiter:
+			model.remove(treeiter)
+			self._save_and_refresh()
+
+	def on_add_group(self, button):
+		dialog = Gtk.Dialog(
+			title="Add Group", transient_for=self, modal=True)
+		dialog.set_border_width(20)
+		dialog.add_buttons(Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL,
+						   Gtk.STOCK_OK, Gtk.ResponseType.OK)
+		box = dialog.get_content_area()
+		label_entry = Gtk.Entry()
+		label_entry.set_placeholder_text("Group Name")
+		box.pack_start(Gtk.Label(label="Group Name:"), False, False, 0)
+		box.pack_start(label_entry, False, False, 0)
+		box.set_border_width(20)
+		dialog.show_all()
+		resp = dialog.run()
+		if resp == Gtk.ResponseType.OK:
+			label = label_entry.get_text().strip()
+			if label:
+				self.liststore.append(['__GROUP__', label])
+				self._save_and_refresh()
+		dialog.destroy()
+
+	def on_move_up(self, button):
+		selection = self.treeview.get_selection()
+		model, treeiter = selection.get_selected()
+		if treeiter:
+			path = model.get_path(treeiter)
+			index = path.get_indices()[0]
+			if index > 0:
+				model.insert(index - 1, list(model[treeiter]))
+				model.remove(treeiter)
+				iter_moved = model.get_iter(index - 1)
+				self.treeview.get_selection().select_iter(iter_moved)
+				self._save_and_refresh()
+
+	def on_move_down(self, button):
+		selection = self.treeview.get_selection()
+		model, treeiter = selection.get_selected()
+		if treeiter:
+			path = model.get_path(treeiter)
+			index = path.get_indices()[0]
+			if index < len(model) - 1:
+				model.insert(index + 2, list(model[treeiter]))
+				model.remove(treeiter)
+				iter_moved = model.get_iter(index + 1)
+				self.treeview.get_selection().select_iter(iter_moved)
+				self._save_and_refresh()
+
+	def get_bookmarks(self):
+		return [(row[0], row[1]) for row in self.liststore]
+
+	def on_add_to_menu(self, button):
+		exec_path = os.path.abspath(__file__)
+		create_desktop_file(exec_path)
+		show_notification("Added SSH Bookmark Manager to menu.", parent=self)
+
+	def on_autostart_toggle(self, switch, gparam):
+		if switch.get_active():
+			add_to_autostart(True)
+			show_notification("Autostart enabled.", parent=self)
+		else:
+			add_to_autostart(False)
+			show_notification("Autostart disabled.", parent=self)
+
+class SSHTrayApp:
+	def __init__(self):
+		self.terminal = read_config_terminal()
+		self.app = AppIndicator3.Indicator.new(
+			'ssh-bookmarks', ICON_NAME,
+			AppIndicator3.IndicatorCategory.APPLICATION_STATUS)
+		self.app.set_status(AppIndicator3.IndicatorStatus.ACTIVE)
+		self.app.set_title("Open SSH connection")
+		self.menu = Gtk.Menu()
+		self.build_menu()
+		self.app.set_menu(self.menu)
+
+	def build_menu(self):
+		self.menu.foreach(lambda widget: self.menu.remove(widget))
+		bookmarks = load_bookmarks()
+		for label, target in bookmarks:
+			if label == '__GROUP__':
+				item = Gtk.MenuItem(label=target)
+				item.set_sensitive(False)
+				item.get_child().set_markup(f'<b>{target}</b>')
+				self.menu.append(item)
+			else:
+				item = Gtk.MenuItem(label=label)
+				item.connect('activate', self.on_bookmark_activate, target, label)
+				self.menu.append(item)
+		self.menu.append(Gtk.SeparatorMenuItem())
+		edit_item = Gtk.MenuItem(label="Edit bookmarks/config")
+		edit_item.connect('activate', self.on_edit_bookmarks)
+		self.menu.append(edit_item)
+		instr_item = Gtk.MenuItem(label="Show instructions")
+		instr_item.connect('activate', self.on_show_instructions)
+		self.menu.append(instr_item)
+		self.menu.append(Gtk.SeparatorMenuItem())
+		quit_item = Gtk.MenuItem(label="Quit")
+		quit_item.connect('activate', self.quit)
+		self.menu.append(quit_item)
+		self.menu.show_all()
+
+	def on_bookmark_activate(self, widget, target, label):
+		open_ssh_in_terminal(self.terminal, target, label)
+
+	def on_edit_bookmarks(self, widget):
+		def refresh_menu():
+			self.terminal = read_config_terminal()
+			self.build_menu()
+		bookmarks = load_bookmarks()
+		dialog = EditBookmarksDialog(None, bookmarks, self.terminal, on_change_callback=refresh_menu)
+		dialog.run()
+		dialog.destroy()
+
+	def on_show_instructions(self, widget):
+		show_instructions()
+
+	def quit(self, widget):
+		Gtk.main_quit()
+
+def main():
+	created = ensure_config_files()
+	app = SSHTrayApp()
+	if created:
+		show_instructions()
+	Gtk.main()
+
+if __name__ == '__main__':
+	main()
+</file>
+
+<file path="scripts/git_init.sh">
+#!/bin/bash
+# git_init.sh - Initialize SSH Bookmark Manager repository on GitHub
+# This script clears the existing repo and creates a fresh one with the new structure
+
+set -e
+
+# --- Settings ---
+GITHUB_USER="vordan"
+REPO_NAME="ssh-tray"
+GIT_EMAIL="vordan@infoproject.biz"
+GIT_NAME="Vanco Ordanoski"
+REPO_DESCRIPTION="SSH Bookmark Manager - Linux tray application for managing SSH bookmarks"
+# ---------------
+
+echo "==============================================================================="
+echo "SSH Bookmark Manager - GitHub Repository Initialization"
+echo "==============================================================================="
+echo
+echo "This script will:"
+echo "  1. Delete the existing GitHub repository: $GITHUB_USER/$REPO_NAME"
+echo "  2. Create a fresh new repository with the same name"
+echo "  3. Initialize local git repository"
+echo "  4. Make initial commit with the reorganized structure"
+echo "  5. Push to GitHub as the main branch"
+echo
+echo "WARNING: This will permanently delete the existing repository and all its history!"
+echo
+
+# Function: yes/no confirmation prompt
+function confirm() {
+	while true; do
+		read -r -p "$1 [Y/n] " answer
+		case "$answer" in
+			[Yy][Ee][Ss]|[Yy]|"") return 0 ;;
+			[Nn][Oo]|[Nn]) return 1 ;;
+			*) echo "Please answer Y or n." ;;
+		esac
+	done
+}
+
+# Check for GitHub CLI
+if ! command -v gh >/dev/null 2>&1; then
+	echo "ERROR: GitHub CLI (gh) is required but not installed."
+	echo "Please install it first: sudo apt install gh"
+	echo "Or run: ./scripts/github_cli_install.sh"
+	exit 1
+fi
+
+# Auto-detect project root directory and change to it
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ "$(basename "$SCRIPT_DIR")" == "scripts" ]]; then
+	# Running from scripts/ directory, go up one level
+	PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+	echo "Detected running from scripts/ directory, changing to project root..."
+	cd "$PROJECT_ROOT"
+fi
+
+# Check if we're in the right directory (should have src/ and scripts/)
+if [[ ! -d "src" || ! -d "scripts" ]]; then
+	echo "ERROR: Cannot find SSH Bookmark Manager project structure."
+	echo "Expected to find src/ and scripts/ directories."
+	echo "Current directory: $(pwd)"
+	echo "Please run this script from the project root or scripts/ directory."
+	exit 1
+fi
+
+echo "Working in project directory: $(pwd)"
+
+# Confirm repository deletion
+if ! confirm "Delete existing repository $GITHUB_USER/$REPO_NAME and create fresh one?"; then
+	echo "Aborted by user."
+	exit 1
+fi
+
+echo
+echo "Setting up git configuration..."
+git config --global user.name "$GIT_NAME"
+git config --global user.email "$GIT_EMAIL"
+
+# Add current directory as safe directory to avoid 'dubious ownership' warnings
+CURRENT_DIR="$(pwd)"
+echo "Adding current directory as git safe directory..."
+git config --global --add safe.directory "$CURRENT_DIR"
+
+echo "Checking if GitHub repository exists..."
+if gh repo view "$GITHUB_USER/$REPO_NAME" >/dev/null 2>&1; then
+	echo "Repository exists. Deleting existing GitHub repository..."
+	if gh repo delete "$GITHUB_USER/$REPO_NAME" --confirm; then
+		echo "✓ Repository deleted successfully"
+		# Wait a moment for GitHub to process the deletion
+		echo "Waiting for GitHub to process deletion..."
+		sleep 3
+	else
+		echo "ERROR: Failed to delete repository. Please delete it manually:"
+		echo "  https://github.com/$GITHUB_USER/$REPO_NAME/settings"
+		echo "Or delete via CLI: gh repo delete $GITHUB_USER/$REPO_NAME --confirm"
+		exit 1
+	fi
+else
+	echo "ℹ Repository does not exist"
+fi
+
+echo "Creating new GitHub repository..."
+if gh repo create "$GITHUB_USER/$REPO_NAME" --public --description "$REPO_DESCRIPTION"; then
+	echo "✓ New repository created successfully"
+else
+	echo "ERROR: Failed to create repository. It may still exist or deletion is still processing."
+	echo "Please wait a few minutes and try again, or delete manually first:"
+	echo "  https://github.com/$GITHUB_USER/$REPO_NAME"
+	exit 1
+fi
+
+echo "Initializing local git repository..."
+# Remove any existing git directory
+if [[ -d ".git" ]]; then
+	rm -rf .git
+fi
+
+git init
+echo "✓ Git repository initialized"
+
+echo "Adding all files..."
+git add .
+
+echo "Creating initial commit..."
+git commit -m "Initial commit: Reorganized SSH Bookmark Manager with modular structure
+
+- Restructured as proper Python package in src/ssh_tray/
+- Moved scripts to scripts/ directory
+- Added sample configuration files in config/
+- Updated installation to use /opt/ssh-tray (follows Linux FHS)
+- Improved code documentation and organization
+- Maintained original coding style and functionality
+- Added proper package structure with __init__.py
+- Fixed import statements for modular architecture
+- Enhanced system integration and autostart features"
+
+echo "Setting main branch..."
+git branch -M main
+
+echo "Adding remote origin..."
+git remote add origin "https://github.com/$GITHUB_USER/$REPO_NAME.git"
+
+echo "Pushing to GitHub..."
+git push -u origin main
+
+echo
+echo "==============================================================================="
+echo "✓ SUCCESS: Repository initialized and pushed to GitHub!"
+echo "==============================================================================="
+echo
+echo "Repository URL: https://github.com/$GITHUB_USER/$REPO_NAME"
+echo "Clone command: git clone https://github.com/$GITHUB_USER/$REPO_NAME.git"
+echo
+echo "Next steps:"
+echo "  - View your repository: gh repo view --web"
+echo "  - For future commits, use: ./scripts/git_commit.sh \"Your commit message\""
+echo "  - Test the installation: ./scripts/install.sh"
+echo
+</file>
+
+<file path="scripts/github_cli_install.sh">
+#!/bin/bash
+# github_cli_install.sh - Install GitHub CLI ('gh') for Ubuntu/Mint
+
+set -e
+
+if command -v gh >/dev/null 2>&1; then
+	echo "GitHub CLI (gh) is already installed: $(gh --version | head -1)"
+	exit 0
+fi
+
+echo "Trying to install GitHub CLI (gh) using the official apt repository..."
+
+type -p curl >/dev/null || sudo apt install curl -y
+
+if ! grep -q githubcli /etc/apt/sources.list /etc/apt/sources.list.d/* 2>/dev/null; then
+	curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | \
+		sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
+	sudo chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg
+	echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | \
+		sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
+	sudo apt update
+fi
+
+if sudo apt install gh -y; then
+	echo "GitHub CLI installed successfully (via apt)."
+	gh --version
+	exit 0
+else
+	echo "Apt installation failed. Trying to install via Snap..."
+	if command -v snap >/dev/null 2>&1; then
+		sudo snap install gh
+		echo "GitHub CLI installed successfully (via snap)."
+		gh --version
+		exit 0
+	else
+		echo "Snap not available and apt install failed. Please install manually from https://github.com/cli/cli/releases"
+		exit 1
+	fi
+fi
+</file>
+
+<file path="scripts/make_ssh_tray_project.sh">
+#!/bin/bash
+
+cat <<EOF
+===============================================================================
+make_ssh_tray_project.sh
+------------------------
+This script will:
+
+ - Create a new project folder (default: ./ssh-tray) in your current directory.
+ - Set up the proper directory structure with src/, scripts/, and archive/ folders.
+ - Write all SSH Bookmark Manager source files into the appropriate locations.
+ - This is for DEVELOPERS, packagers, or for preparing a project structure.
+ - It does NOT install, run, or fetch files from the Internet.
+ - You will be able to edit, ZIP, or upload the project to GitHub or other repositories.
+
+No code will be executed outside the folder, and no symlinks or system files will be touched.
+
+Are you sure you want to CONTINUE? [Y/n]
+===============================================================================
+EOF
+
+read -r ok
+case "$ok" in [nN]*) echo "Aborted."; exit 1;; esac
+
+# Choose folder name
+DEFAULT_DIR="ssh-tray"
+echo
+read -p "Enter directory for project output [${DEFAULT_DIR}]: " OUT_DIR
+OUT_DIR="${OUT_DIR:-$DEFAULT_DIR}"
+
+# Create directory structure
+echo "Creating project structure in $(pwd)/$OUT_DIR ..."
+mkdir -p "$OUT_DIR"/{src/ssh_tray,scripts,archive,config}
+cd "$OUT_DIR"
+
+# Create package __init__.py
+cat > src/ssh_tray/__init__.py <<'EOF'
+"""
+SSH Bookmark Manager Package
+============================
+
+A Linux tray application for managing SSH bookmarks with group support,
+configurable terminals, and desktop integration.
+
+Author: Vanco Ordanoski
+Company: Infoproject LLC, North Macedonia
+License: MIT
+"""
+
+__version__ = "1.0.0"
+__author__ = "Vanco Ordanoski"
+__email__ = "vordan@infoproject.biz"
+__company__ = "Infoproject LLC"
+EOF
+
+# Create main application module
+cat > src/ssh_tray/main.py <<'EOF'
+#!/usr/bin/env python3
+"""
+Main entry point for SSH Bookmark Manager tray application.
+Manages the system tray icon, builds menus from bookmarks, and handles user interactions.
+"""
+
+import gi
+gi.require_version('Gtk', '3.0')
+gi.require_version('AppIndicator3', '0.1')
+from gi.repository import Gtk, AppIndicator3
+
+from .configuration import (
+	read_config_terminal, ensure_config_files, load_bookmarks, show_instructions
+)
+from .system import (
+	open_ssh_in_terminal, ICON_NAME
+)
+from .editor import EditBookmarksDialog
+
+class SSHTrayApp:
+	"""Main tray application class that manages the indicator and menu."""
+	
+	def __init__(self):
+		"""Initialize the tray application with indicator and menu."""
+		self.terminal = read_config_terminal()
+		
+		# Create the system tray indicator
+		self.app = AppIndicator3.Indicator.new(
+			'ssh-bookmarks', ICON_NAME,
+			AppIndicator3.IndicatorCategory.APPLICATION_STATUS)
+		self.app.set_status(AppIndicator3.IndicatorStatus.ACTIVE)
+		self.app.set_title("Open SSH connection")
+		
+		# Initialize and build the context menu
+		self.menu = Gtk.Menu()
+		self.build_menu()
+		self.app.set_menu(self.menu)
+
+	def build_menu(self):
+		"""Build the tray context menu from bookmarks and add control items."""
+		# Clear existing menu items
+		self.menu.foreach(lambda widget: self.menu.remove(widget))
+		
+		# Load bookmarks and create menu items
+		bookmarks = load_bookmarks()
+		for label, target in bookmarks:
+			if label == '__GROUP__':
+				# Create group header (disabled, bold text)
+				item = Gtk.MenuItem(label=target)
+				item.set_sensitive(False)
+				item.get_child().set_markup(f'<b>{target}</b>')
+				self.menu.append(item)
+			else:
+				# Create clickable bookmark item
+				item = Gtk.MenuItem(label=label)
+				item.connect('activate', self.on_bookmark_activate, target, label)
+				self.menu.append(item)
+		
+		# Add separator and control menu items
+		self.menu.append(Gtk.SeparatorMenuItem())
+		
+		edit_item = Gtk.MenuItem(label="Edit bookmarks/config")
+		edit_item.connect('activate', self.on_edit_bookmarks)
+		self.menu.append(edit_item)
+		
+		instr_item = Gtk.MenuItem(label="Show instructions")
+		instr_item.connect('activate', self.on_show_instructions)
+		self.menu.append(instr_item)
+		
+		self.menu.append(Gtk.SeparatorMenuItem())
+		
+		quit_item = Gtk.MenuItem(label="Quit")
+		quit_item.connect('activate', self.quit)
+		self.menu.append(quit_item)
+		
+		self.menu.show_all()
+
+	def on_bookmark_activate(self, widget, target, label):
+		"""Handle bookmark menu item click by opening SSH connection."""
+		open_ssh_in_terminal(self.terminal, target, label)
+
+	def on_edit_bookmarks(self, widget):
+		"""Open the bookmark and configuration editor dialog."""
+		def refresh_menu():
+			"""Callback to refresh menu after changes."""
+			self.terminal = read_config_terminal()
+			self.build_menu()
+		
+		bookmarks = load_bookmarks()
+		dialog = EditBookmarksDialog(None, bookmarks, self.terminal, on_change_callback=refresh_menu)
+		dialog.run()
+		dialog.destroy()
+
+	def on_show_instructions(self, widget):
+		"""Display help instructions dialog."""
+		show_instructions()
+
+	def quit(self, widget):
+		"""Exit the application."""
+		Gtk.main_quit()
+
+def main():
+	"""Main application entry point."""
+	# Ensure configuration files exist, show help if first run
+	created = ensure_config_files()
+	
+	# Create and run the tray application
+	app = SSHTrayApp()
+	
+	# Show instructions on first run
+	if created:
+		show_instructions()
+	
+	# Start GTK main loop
+	Gtk.main()
+
+if __name__ == '__main__':
+	main()
+EOF
+
+# Create remaining Python modules
+cat > src/ssh_tray/configuration.py <<'EOF'
+"""
+Configuration and bookmarks management for SSH Tray.
+Handles reading/writing config files, bookmark validation, and help text display.
+"""
+
+import os
+import shutil
+from .system import show_notification, available_terminals
+
+# Configuration file paths in user's home directory
+BOOKMARKS_FILE = os.path.expanduser('~/.ssh_bookmarks')
+CONFIG_FILE = os.path.expanduser('~/.ssh_tray_config')
+
+def ensure_config_files():
+	"""Create default configuration files if they don't exist.
+	
+	Returns:
+		bool: True if files were created (first run), False if they existed
+	"""
+	created = False
+	
+	# Create default terminal configuration
+	if not os.path.exists(CONFIG_FILE):
+		with open(CONFIG_FILE, 'w') as f:
+			f.write('terminal=mate-terminal\n')
+		created = True
+	
+	# Create example bookmarks file
+	if not os.path.exists(BOOKMARKS_FILE):
+		with open(BOOKMARKS_FILE, 'w') as f:
+			f.write('# Example SSH bookmarks:\n')
+			f.write('------ Dev Servers ------\n')
+			f.write('Dev 1 [10.10.10.98]\troot@10.10.10.98\n')
+			f.write('Dev 2 [10.10.11.22]\troot@10.10.11.22\n')
+			f.write('------ Production ------\n')
+			f.write('Prod DB\tadmin@192.168.1.5\n')
+		created = True
+	
+	return created
+
+# ... rest of configuration.py content ...
+EOF
+
+echo "Project structure created successfully in $(pwd)"
+echo
+echo "Directory structure:"
+echo "  src/ssh_tray/     - Python package with application modules"
+echo "  scripts/          - Installation and utility scripts"
+echo "  archive/          - Old versions and backup files"
+echo "  config/           - Sample configuration files"
+echo
+echo "Next steps:"
+echo "  1. Complete the module files in src/ssh_tray/ with full implementations"
+echo "  2. Add installation scripts to scripts/"
+echo "  3. Create README.md, LICENSE.md in the root"
+echo "  4. Test the application structure"
+echo
+echo "Note: This script creates a basic structure. You'll need to complete"
+echo "the implementation of each module with the full source code."
+</file>
 
 <file path="src/ssh_tray/__init__.py">
 """
@@ -113,8 +1259,8 @@ import os
 import shutil
 from .system import show_notification, available_terminals
 
-BOOKMARKS_FILE = os.path.expanduser('~/.ssh_bookmarks')
-CONFIG_FILE = os.path.expanduser('~/.ssh_tray_config')
+BOOKMARKS_FILE = os.path.expanduser('~/.ssh-bookmarks')
+CONFIG_FILE = os.path.expanduser('~/.ssh-tray-config')
 
 def ensure_config_files():
 	"""Create default configuration files if they don't exist.
@@ -226,8 +1372,22 @@ def validate_bookmark_line(line):
 	if len(parts) == 2:
 		label, ssh_target = parts
 		# Validate SSH target contains username@host
+		# Enhanced validation
 		if '@' in ssh_target:
-			return (label, ssh_target)
+			 # Validate SSH target format: user@host[:port]
+			 import re
+			 pattern = r'^[a-zA-Z0-9\-._]+@[a-zA-Z0-9\-._]+(?::\d{1,5})?$'
+			 if re.match(pattern, ssh_target):
+				  # Validate port range if specified
+				  if ':' in ssh_target:
+						try:
+							 port = int(ssh_target.split(':')[-1])
+							 if not (1 <= port <= 65535):
+								  return None
+						except ValueError:
+							 return None
+				  return (label, ssh_target)
+
 
 	return None
 
@@ -843,12 +2003,14 @@ Handles launching terminals, autostart, desktop integration, notifications, etc.
 import os
 import shutil
 import subprocess
+import shlex
+import re
 
 ICON_NAME = 'network-server'
 
 def available_terminals():
 	"""Get list of supported terminal emulators available on the system.
-	
+
 	Returns:
 		list: Terminal command names that are found in PATH
 	"""
@@ -860,13 +2022,13 @@ def available_terminals():
 
 def show_notification(message, parent=None):
 	"""Display a notification dialog with the given message.
-	
+
 	Args:
 		message (str): Text to display in the dialog
 		parent: Parent window for modal dialog (optional)
 	"""
 	from gi.repository import Gtk
-	
+
 	dialog = Gtk.MessageDialog(
 		parent=parent, modal=True, message_type=Gtk.MessageType.INFO,
 		buttons=Gtk.ButtonsType.OK, text=message)
@@ -878,51 +2040,43 @@ def show_notification(message, parent=None):
 	dialog.destroy()
 
 def open_ssh_in_terminal(terminal, ssh_target, label):
-	"""Launch SSH connection in the specified terminal emulator.
-	
-	Args:
-		terminal (str): Terminal command name or path
-		ssh_target (str): SSH connection string (user@host[:port])
-		label (str): Description for terminal window title
-	"""
+	"""Launch SSH connection in the specified terminal emulator."""
 	try:
-		# Resolve terminal executable path
+		# SECURITY: Validate ssh_target format
+		if not re.match(r'^[a-zA-Z0-9\-._@:]+$', ssh_target):
+			show_notification(f"Invalid SSH target format: {ssh_target}")
+			return
+
+		# SECURITY: Quote ssh_target to prevent injection
+		ssh_target_safe = shlex.quote(ssh_target)
+		label_safe = shlex.quote(label)
+
+		# Rest of function stays the same, but use ssh_target_safe
 		terminal_exec = terminal
 		if os.path.isabs(terminal) and os.access(terminal, os.X_OK):
-			# Already absolute path and executable
 			pass
 		else:
-			# Find in PATH or use as-is
 			terminal_exec = shutil.which(terminal) or terminal
-		
-		# Build command based on terminal type
+
 		if 'mate-terminal' in terminal_exec:
-			cmd = [
-				terminal_exec, '--tab', '--title', label, '--',
-				'bash', '-c', f'ssh {ssh_target}; exec bash'
-			]
+			cmd = [terminal_exec, '--tab', '--title', label_safe, '--', 'bash', '-c', f'ssh {ssh_target_safe}; exec bash']
 		elif 'xfce4-terminal' in terminal_exec:
-			cmd = [
-				terminal_exec, '--tab', '--title', label, '--command',
-				f'ssh {ssh_target}'
-			]
+			cmd = [terminal_exec, '--tab', '--title', label_safe, '--command', f'ssh {ssh_target_safe}']
 		elif 'gnome-terminal' in terminal_exec:
-			cmd = [
-				terminal_exec, '--tab', '--title', label, '--', 'ssh', ssh_target
-			]
+			cmd = [terminal_exec, '--tab', '--title', label_safe, '--', 'ssh', ssh_target_safe]
 		elif 'xterm' in terminal_exec:
-			cmd = [
-				terminal_exec, '-T', label, '-e', f'ssh {ssh_target}'
-			]
+			cmd = [terminal_exec, '-T', label_safe, '-e', f'ssh {ssh_target_safe}']
 		else:
-			# Generic terminal command
-			cmd = [terminal_exec, '-e', f'ssh {ssh_target}']
-		
-		# Launch terminal in background
-		subprocess.Popen(cmd)
-		
+			cmd = [terminal_exec, '-e', f'ssh {ssh_target_safe}']
+
+		process = subprocess.Popen(cmd, stderr=subprocess.PIPE)
+    # Check if process failed to start
+		if process.poll() is not None and process.returncode != 0:
+			show_notification(f"Terminal failed to start: {terminal_exec}")
+	except (FileNotFoundError, PermissionError) as e:
+		show_notification(f"Cannot launch terminal '{terminal_exec}': {e}")
 	except Exception as e:
-		show_notification(f"Failed to launch terminal.\n{e}")
+		show_notification(f"Failed to launch terminal: {e}")
 
 DESKTOP_FILE = os.path.expanduser('~/.local/share/applications/ssh_tray.desktop')
 AUTOSTART_DIR = os.path.expanduser('~/.config/autostart')
@@ -930,7 +2084,7 @@ AUTOSTART_FILE = os.path.join(AUTOSTART_DIR, 'ssh_tray.desktop')
 
 def create_desktop_file(exec_path):
 	"""Create .desktop file for application menu integration.
-	
+
 	Args:
 		exec_path (str): Path to the executable to launch
 	"""
@@ -943,7 +2097,7 @@ Terminal=false
 Categories=Utility;Network;
 Comment=SSH tray bookmarks and launcher
 """
-	
+
 	# Ensure directory exists and write desktop file
 	os.makedirs(os.path.dirname(DESKTOP_FILE), exist_ok=True)
 	with open(DESKTOP_FILE, 'w') as f:
@@ -952,7 +2106,7 @@ Comment=SSH tray bookmarks and launcher
 
 def add_to_autostart(enable=True):
 	"""Enable or disable application autostart on login.
-	
+
 	Args:
 		enable (bool): True to enable autostart, False to disable
 	"""
@@ -967,1409 +2121,11 @@ def add_to_autostart(enable=True):
 
 def is_autostart_enabled():
 	"""Check if application autostart is currently enabled.
-	
+
 	Returns:
 		bool: True if autostart file exists, False otherwise
 	"""
 	return os.path.exists(AUTOSTART_FILE)
-</file>
-
-<file path="archive/ssh_tray.old.py">
-#!/usr/bin/env python3
-"""
-===============================================================================
-SSH Bookmark Manager
-Company:    Infoproject LLC, North Macedonia
-Developer:  Vanco Ordanoski - vordan@infoproject.biz
-Support:    support@infoproject.biz
-
-License:    MIT License (see below)
--------------------------------------------------------------------------------
-Description:
-    SSH Bookmark Manager is a Linux tray application for managing SSH bookmarks.
-    - Provides a tray menu with one-click SSH access to saved hosts/groups.
-    - Supports bookmarks grouping, reorder, easy add/edit/delete, and configuration.
-    - Configurable terminal emulator support (mate-terminal, gnome-terminal, etc.).
-    - Bookmarks and config are saved as simple text files in your home folder.
-    - Autostart and .desktop launcher integration are supported.
-    - Designed for Linux Mint/Ubuntu/Cinnamon/MATE/XFCE/other desktops.
--------------------------------------------------------------------------------
-Usage:
-    1. Run ./ssh_tray.py &
-    2. Edit your SSH bookmarks and terminal preferences from the tray menu.
-    3. Use the tray icon to launch SSH sessions in your chosen terminal.
-    4. Optionally, enable autostart and add a menu shortcut.
-
-Files:
-    - ~/.ssh_bookmarks      List of bookmarks (one per line; group lines supported)
-    - ~/.ssh_tray_config    Terminal emulator and settings (see examples)
-    - ~/.config/autostart/ssh_tray.desktop (autostart link, if enabled)
-    - ~/.local/share/applications/ssh_tray.desktop (menu launcher, if added)
-
-Dependencies:
-    - Python 3.x
-    - python3-gi (GTK and AppIndicator bindings)
-    - Supported terminal emulator (mate-terminal, gnome-terminal, xfce4-terminal, etc.)
-
-MIT License:
-    Permission is hereby granted, free of charge, to any person obtaining a copy
-    of this software and associated documentation files (the "Software"), to deal
-    in the Software without restriction, including without limitation the rights
-    to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-    copies of the Software, and to permit persons to whom the Software is
-    furnished to do so, subject to the following conditions:
-    The above copyright notice and this permission notice shall be included in
-    all copies or substantial portions of the Software.
-
-    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-    OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-    THE SOFTWARE.
-===============================================================================
-"""
-
-import gi
-import subprocess
-import os
-import shutil
-
-gi.require_version('Gtk', '3.0')
-gi.require_version('AppIndicator3', '0.1')
-from gi.repository import Gtk, AppIndicator3
-
-BOOKMARKS_FILE = os.path.expanduser('~/.ssh_bookmarks')
-CONFIG_FILE = os.path.expanduser('~/.ssh_tray_config')
-DESKTOP_FILE = os.path.expanduser('~/.local/share/applications/ssh_tray.desktop')
-AUTOSTART_DIR = os.path.expanduser('~/.config/autostart')
-AUTOSTART_FILE = os.path.join(AUTOSTART_DIR, 'ssh_tray.desktop')
-
-SUPPORTED_TERMINALS = [
-	'mate-terminal', 'gnome-terminal', 'xfce4-terminal', 'tilix',
-	'konsole', 'lxterminal', 'xterm'
-]
-
-ICON_NAME = 'network-server'
-
-def ensure_config_files():
-	created = False
-	if not os.path.exists(CONFIG_FILE):
-		with open(CONFIG_FILE, 'w') as f:
-			f.write('terminal=mate-terminal\n')
-		created = True
-	if not os.path.exists(BOOKMARKS_FILE):
-		with open(BOOKMARKS_FILE, 'w') as f:
-			f.write('# Example SSH bookmarks:\n')
-			f.write('------ Dev Servers ------\n')
-			f.write('Dev 1 [10.10.10.98]\troot@10.10.10.98\n')
-			f.write('Dev 2 [10.10.11.22]\troot@10.10.11.22\n')
-			f.write('------ Production ------\n')
-			f.write('Prod DB\tadmin@192.168.1.5\n')
-		created = True
-	return created
-
-def show_instructions(parent=None):
-	text = (
-		"SSH Bookmark Manager Help\n\n"
-		"Bookmarks: {}\n"
-		"Config: {}\n\n"
-		"How to use:\n"
-		" - Each line in the bookmarks file is either:\n"
-		"     * a bookmark: DESCRIPTION<tab>user@host[:port]\n"
-		"     * a group header: a line with dashes, e.g. '------ Group Name ------'\n"
-		" - Set your terminal in the config file (e.g. 'terminal=mate-terminal').\n"
-		" - Edit everything using the tray editor, or a text editor if you prefer.\n"
-		" - Use the tray icon to launch SSH, edit bookmarks, show help, or configure autostart.\n"
-		" - For menu or autostart integration, see configuration in the tray menu."
-	).format(BOOKMARKS_FILE, CONFIG_FILE)
-	dialog = Gtk.MessageDialog(
-		parent=parent, modal=True, message_type=Gtk.MessageType.INFO,
-		buttons=Gtk.ButtonsType.OK, text="SSH Bookmark Manager - Instructions")
-	dialog.format_secondary_text(text)
-	dialog.set_border_width(20)
-	dialog.connect("response", lambda d, r: d.destroy())
-	dialog.connect("delete-event", lambda d, e: d.destroy() or False)
-	dialog.show_all()
-	dialog.run()
-	dialog.destroy()
-
-def available_terminals():
-	return [t for t in SUPPORTED_TERMINALS if shutil.which(t)]
-
-def read_config_terminal():
-	terminal = 'mate-terminal'
-	if os.path.exists(CONFIG_FILE):
-		with open(CONFIG_FILE) as f:
-			for line in f:
-				line = line.strip()
-				if line.startswith('terminal='):
-					val = line.split('=', 1)[1].strip()
-					if val:
-						terminal = val
-					break
-	if not (os.path.isabs(terminal) and os.access(terminal, os.X_OK)) and shutil.which(terminal) is None:
-		show_notification(f"Terminal '{terminal}' not found in PATH.\nPlease select or set a valid terminal in the configuration.")
-		avail = available_terminals()
-		if avail:
-			terminal = avail[0]
-		else:
-			terminal = 'xterm'
-	return terminal
-
-def validate_bookmark_line(line):
-	line = line.strip()
-	if not line or line.startswith('#'):
-		return None
-	if line.startswith('-') and line.endswith('-') and len(line) > 3:
-		return ('__GROUP__', line.strip('- ').strip())
-	parts = line.rsplit(None, 1)
-	if len(parts) == 2:
-		label, ssh_target = parts
-		if '@' in ssh_target:
-			return (label, ssh_target)
-	return None
-
-def load_bookmarks():
-	bookmarks = []
-	errors = []
-	if os.path.exists(BOOKMARKS_FILE):
-		with open(BOOKMARKS_FILE, 'r') as f:
-			for idx, line in enumerate(f):
-				result = validate_bookmark_line(line)
-				if result:
-					bookmarks.append(result)
-				elif line.strip() and not line.strip().startswith('#'):
-					errors.append(f"Line {idx+1}: '{line.strip()}'")
-	if errors:
-		show_notification("Invalid lines in bookmarks file:\n" + "\n".join(errors))
-	return bookmarks
-
-def save_bookmarks(bookmarks):
-	with open(BOOKMARKS_FILE, 'w') as f:
-		for label, ssh_target in bookmarks:
-			if label == '__GROUP__':
-				f.write(f"------ {ssh_target} ------\n")
-			else:
-				f.write(f"{label}\t{ssh_target}\n")
-
-def open_ssh_in_terminal(terminal, ssh_target, label):
-	try:
-		terminal_exec = terminal
-		if os.path.isabs(terminal) and os.access(terminal, os.X_OK):
-			pass
-		else:
-			terminal_exec = shutil.which(terminal) or terminal
-		if 'mate-terminal' in terminal_exec:
-			cmd = [
-				terminal_exec, '--tab', '--title', label, '--',
-				'bash', '-c', f'ssh {ssh_target}; exec bash'
-			]
-		elif 'xfce4-terminal' in terminal_exec:
-			cmd = [
-				terminal_exec, '--tab', '--title', label, '--command',
-				f'ssh {ssh_target}'
-			]
-		elif 'gnome-terminal' in terminal_exec:
-			cmd = [
-				terminal_exec, '--tab', '--title', label, '--', 'ssh', ssh_target
-			]
-		elif 'xterm' in terminal_exec:
-			cmd = [
-				terminal_exec, '-T', label, '-e', f'ssh {ssh_target}'
-			]
-		else:
-			cmd = [terminal_exec, '-e', f'ssh {ssh_target}']
-		subprocess.Popen(cmd)
-	except Exception as e:
-		show_notification(f"Failed to launch terminal.\n{e}")
-
-def create_desktop_file(exec_path):
-	contents = f"""[Desktop Entry]
-Type=Application
-Name=SSH Bookmark Manager
-Exec={exec_path}
-Icon={ICON_NAME}
-Terminal=false
-Categories=Utility;Network;
-Comment=SSH tray bookmarks and launcher
-"""
-	os.makedirs(os.path.dirname(DESKTOP_FILE), exist_ok=True)
-	with open(DESKTOP_FILE, 'w') as f:
-		f.write(contents)
-	os.chmod(DESKTOP_FILE, 0o755)
-
-def add_to_autostart(enable=True):
-	if enable:
-		os.makedirs(AUTOSTART_DIR, exist_ok=True)
-		shutil.copy(DESKTOP_FILE, AUTOSTART_FILE)
-	else:
-		if os.path.exists(AUTOSTART_FILE):
-			os.remove(AUTOSTART_FILE)
-
-def is_autostart_enabled():
-	return os.path.exists(AUTOSTART_FILE)
-
-def show_notification(message, parent=None):
-	dialog = Gtk.MessageDialog(
-		parent=parent, modal=True, message_type=Gtk.MessageType.INFO,
-		buttons=Gtk.ButtonsType.OK, text=message)
-	dialog.set_border_width(20)
-	dialog.connect("response", lambda d, r: d.destroy())
-	dialog.connect("delete-event", lambda d, e: d.destroy() or False)
-	dialog.show_all()
-	dialog.run()
-	dialog.destroy()
-
-class EditBookmarksDialog(Gtk.Dialog):
-	def __init__(self, parent, bookmarks, terminal, on_change_callback):
-		Gtk.Dialog.__init__(self, title="Edit SSH Bookmarks and Configuration", transient_for=parent, modal=True)
-		self.set_border_width(20)
-		self.set_default_size(650, 500)
-		self.bookmarks = [list(item) for item in bookmarks]
-		self.terminal = terminal
-		self.on_change_callback = on_change_callback
-
-		box = self.get_content_area()
-
-		# Subtitle
-		subtitle = Gtk.Label()
-		subtitle.set_text(
-			"Here you can add, remove, group, and reorder SSH bookmarks, and configure your terminal and autostart options.")
-		subtitle.set_justify(Gtk.Justification.LEFT)
-		subtitle.set_halign(Gtk.Align.START)
-		subtitle.set_margin_top(16)
-		subtitle.set_margin_bottom(16)
-		box.pack_start(subtitle, False, False, 0)
-
-		# Terminal selector section
-		term_box = Gtk.Box(spacing=6)
-		term_label = Gtk.Label(label="Terminal:")
-		self.term_combo = Gtk.ComboBoxText()
-		for t in available_terminals():
-			self.term_combo.append_text(t)
-		self.term_combo.set_active(
-			available_terminals().index(self.terminal)
-			if self.terminal in available_terminals() else -1)
-		self.term_entry = Gtk.Entry()
-		self.term_entry.set_text(self.terminal)
-		self.term_combo.connect("changed", self.on_term_combo_changed)
-		term_box.pack_start(term_label, False, False, 0)
-		term_box.pack_start(self.term_combo, False, False, 0)
-		term_box.pack_start(self.term_entry, True, True, 0)
-		save_icon = Gtk.Image.new_from_icon_name("document-save", Gtk.IconSize.BUTTON)
-		save_btn = Gtk.Button()
-		save_btn.set_image(save_icon)
-		save_btn.set_tooltip_text("Save terminal")
-		save_btn.connect("clicked", self.on_save_terminal)
-		help_icon = Gtk.Image.new_from_icon_name("help-about", Gtk.IconSize.BUTTON)
-		help_btn = Gtk.Button()
-		help_btn.set_image(help_icon)
-		help_btn.set_tooltip_text("Help: Supported terminals")
-		help_btn.connect("clicked", self.on_help_terminal)
-		term_box.pack_start(save_btn, False, False, 0)
-		term_box.pack_start(help_btn, False, False, 0)
-		box.pack_start(term_box, False, False, 10)
-
-		# TreeView for bookmarks/groups
-		self.liststore = Gtk.ListStore(str, str)
-		for label, target in self.bookmarks:
-			self.liststore.append([label, target])
-		self.treeview = Gtk.TreeView(model=self.liststore)
-		renderer_text = Gtk.CellRendererText()
-		column_label = Gtk.TreeViewColumn("Description / Group", renderer_text, text=0)
-		column_target = Gtk.TreeViewColumn("SSH Target", renderer_text, text=1)
-		self.treeview.append_column(column_label)
-		self.treeview.append_column(column_target)
-		scrolled_window = Gtk.ScrolledWindow()
-		scrolled_window.set_border_width(5)
-		scrolled_window.set_vexpand(True)
-		scrolled_window.add(self.treeview)
-		box.pack_start(scrolled_window, True, True, 10)
-
-		# Add/Edit/Delete/Group/Up/Down buttons, all with icons
-		button_box = Gtk.Box(spacing=8)
-		self.add_btn = Gtk.Button()
-		self.add_btn.set_image(Gtk.Image.new_from_icon_name("list-add", Gtk.IconSize.BUTTON))
-		self.add_btn.set_tooltip_text("Add bookmark")
-		self.add_btn.connect("clicked", self.on_add)
-
-		self.edit_btn = Gtk.Button()
-		self.edit_btn.set_image(Gtk.Image.new_from_icon_name("document-edit", Gtk.IconSize.BUTTON))
-		self.edit_btn.set_tooltip_text("Edit selected")
-		self.edit_btn.connect("clicked", self.on_edit)
-
-		self.del_btn = Gtk.Button()
-		self.del_btn.set_image(Gtk.Image.new_from_icon_name("edit-delete", Gtk.IconSize.BUTTON))
-		self.del_btn.set_tooltip_text("Delete selected")
-		self.del_btn.connect("clicked", self.on_delete)
-
-		self.grp_btn = Gtk.Button()
-		self.grp_btn.set_image(Gtk.Image.new_from_icon_name("folder-new", Gtk.IconSize.BUTTON))
-		self.grp_btn.set_tooltip_text("Add group")
-		self.grp_btn.connect("clicked", self.on_add_group)
-
-		self.up_btn = Gtk.Button()
-		self.up_btn.set_image(Gtk.Image.new_from_icon_name("go-up", Gtk.IconSize.BUTTON))
-		self.up_btn.set_tooltip_text("Move up")
-		self.up_btn.connect("clicked", self.on_move_up)
-
-		self.down_btn = Gtk.Button()
-		self.down_btn.set_image(Gtk.Image.new_from_icon_name("go-down", Gtk.IconSize.BUTTON))
-		self.down_btn.set_tooltip_text("Move down")
-		self.down_btn.connect("clicked", self.on_move_down)
-
-		for btn in [self.add_btn, self.edit_btn, self.del_btn, self.grp_btn, self.up_btn, self.down_btn]:
-			button_box.pack_start(btn, False, False, 0)
-		box.pack_start(button_box, False, False, 10)
-
-		# Autostart and desktop integration
-		opt_box = Gtk.Box(spacing=8)
-		self.autostart_switch = Gtk.Switch()
-		self.autostart_switch.set_active(is_autostart_enabled())
-		self.autostart_switch.connect("notify::active", self.on_autostart_toggle)
-		opt_box.pack_start(Gtk.Label(label="Autostart:"), False, False, 0)
-		opt_box.pack_start(self.autostart_switch, False, False, 0)
-		desktop_btn = Gtk.Button()
-		desktop_btn.set_image(Gtk.Image.new_from_icon_name("applications-internet", Gtk.IconSize.BUTTON))
-		desktop_btn.set_tooltip_text("Add to Menu (.desktop)")
-		desktop_btn.connect("clicked", self.on_add_to_menu)
-		opt_box.pack_start(desktop_btn, False, False, 0)
-		box.pack_start(opt_box, False, False, 8)
-
-		self.show_all()
-
-	def _save_and_refresh(self):
-		bookmarks = self.get_bookmarks()
-		save_bookmarks(bookmarks)
-		if self.on_change_callback:
-			self.on_change_callback()
-		return bookmarks
-
-	def on_term_combo_changed(self, combo):
-		text = combo.get_active_text()
-		if text:
-			self.term_entry.set_text(text)
-
-	def on_save_terminal(self, button):
-		terminal = self.term_entry.get_text().strip()
-		if not terminal:
-			show_notification("Please enter a terminal command.", parent=self)
-			return
-		with open(CONFIG_FILE, 'w') as f:
-			f.write(f'terminal={terminal}\n')
-		self.terminal = terminal
-		show_notification(f"Terminal set to '{terminal}'.", parent=self)
-
-	def on_help_terminal(self, button):
-		text = (
-			"Supported terminals:\n"
-			"  mate-terminal, gnome-terminal, xfce4-terminal, tilix, konsole, lxterminal, xterm\n"
-			"You can also enter a full path or custom terminal command. The terminal must be in your $PATH."
-		)
-		show_notification(text, parent=self)
-
-	def on_add(self, button):
-		dialog = Gtk.Dialog(
-			title="Add Bookmark", transient_for=self, modal=True)
-		dialog.set_border_width(20)
-		dialog.add_buttons(Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL,
-						   Gtk.STOCK_OK, Gtk.ResponseType.OK)
-		box = dialog.get_content_area()
-		label_entry = Gtk.Entry()
-		label_entry.set_placeholder_text("Description")
-		target_entry = Gtk.Entry()
-		target_entry.set_placeholder_text("user@host[:port]")
-		box.pack_start(Gtk.Label(label="Description:"), False, False, 0)
-		box.pack_start(label_entry, False, False, 0)
-		box.pack_start(Gtk.Label(label="SSH Target:"), False, False, 0)
-		box.pack_start(target_entry, False, False, 0)
-		box.set_border_width(20)
-		dialog.show_all()
-		resp = dialog.run()
-		if resp == Gtk.ResponseType.OK:
-			label = label_entry.get_text().strip()
-			target = target_entry.get_text().strip()
-			if label and target and '@' in target:
-				self.liststore.append([label, target])
-				self._save_and_refresh()
-		dialog.destroy()
-
-	def on_edit(self, button):
-		selection = self.treeview.get_selection()
-		model, treeiter = selection.get_selected()
-		if treeiter:
-			label_old = model[treeiter][0]
-			target_old = model[treeiter][1]
-			if label_old == '__GROUP__':
-				dialog = Gtk.Dialog(
-					title="Edit Group", transient_for=self, modal=True)
-				dialog.set_border_width(20)
-				dialog.add_buttons(Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL,
-								   Gtk.STOCK_OK, Gtk.ResponseType.OK)
-				box = dialog.get_content_area()
-				label_entry = Gtk.Entry()
-				label_entry.set_text(target_old)
-				box.pack_start(Gtk.Label(label="Group Name:"), False, False, 0)
-				box.pack_start(label_entry, False, False, 0)
-				box.set_border_width(20)
-				dialog.show_all()
-				resp = dialog.run()
-				if resp == Gtk.ResponseType.OK:
-					label = label_entry.get_text().strip()
-					if label:
-						model[treeiter][1] = label
-						self._save_and_refresh()
-				dialog.destroy()
-			else:
-				dialog = Gtk.Dialog(
-					title="Edit Bookmark", transient_for=self, modal=True)
-				dialog.set_border_width(20)
-				dialog.add_buttons(Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL,
-								   Gtk.STOCK_OK, Gtk.ResponseType.OK)
-				box = dialog.get_content_area()
-				label_entry = Gtk.Entry()
-				label_entry.set_text(label_old)
-				target_entry = Gtk.Entry()
-				target_entry.set_text(target_old)
-				box.pack_start(Gtk.Label(label="Description:"), False, False, 0)
-				box.pack_start(label_entry, False, False, 0)
-				box.pack_start(Gtk.Label(label="SSH Target:"), False, False, 0)
-				box.pack_start(target_entry, False, False, 0)
-				box.set_border_width(20)
-				dialog.show_all()
-				resp = dialog.run()
-				if resp == Gtk.ResponseType.OK:
-					label = label_entry.get_text().strip()
-					target = target_entry.get_text().strip()
-					if label and target and '@' in target:
-						model[treeiter][0] = label
-						model[treeiter][1] = target
-						self._save_and_refresh()
-				dialog.destroy()
-
-	def on_delete(self, button):
-		selection = self.treeview.get_selection()
-		model, treeiter = selection.get_selected()
-		if treeiter:
-			model.remove(treeiter)
-			self._save_and_refresh()
-
-	def on_add_group(self, button):
-		dialog = Gtk.Dialog(
-			title="Add Group", transient_for=self, modal=True)
-		dialog.set_border_width(20)
-		dialog.add_buttons(Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL,
-						   Gtk.STOCK_OK, Gtk.ResponseType.OK)
-		box = dialog.get_content_area()
-		label_entry = Gtk.Entry()
-		label_entry.set_placeholder_text("Group Name")
-		box.pack_start(Gtk.Label(label="Group Name:"), False, False, 0)
-		box.pack_start(label_entry, False, False, 0)
-		box.set_border_width(20)
-		dialog.show_all()
-		resp = dialog.run()
-		if resp == Gtk.ResponseType.OK:
-			label = label_entry.get_text().strip()
-			if label:
-				self.liststore.append(['__GROUP__', label])
-				self._save_and_refresh()
-		dialog.destroy()
-
-	def on_move_up(self, button):
-		selection = self.treeview.get_selection()
-		model, treeiter = selection.get_selected()
-		if treeiter:
-			path = model.get_path(treeiter)
-			index = path.get_indices()[0]
-			if index > 0:
-				model.insert(index - 1, list(model[treeiter]))
-				model.remove(treeiter)
-				iter_moved = model.get_iter(index - 1)
-				self.treeview.get_selection().select_iter(iter_moved)
-				self._save_and_refresh()
-
-	def on_move_down(self, button):
-		selection = self.treeview.get_selection()
-		model, treeiter = selection.get_selected()
-		if treeiter:
-			path = model.get_path(treeiter)
-			index = path.get_indices()[0]
-			if index < len(model) - 1:
-				model.insert(index + 2, list(model[treeiter]))
-				model.remove(treeiter)
-				iter_moved = model.get_iter(index + 1)
-				self.treeview.get_selection().select_iter(iter_moved)
-				self._save_and_refresh()
-
-	def get_bookmarks(self):
-		return [(row[0], row[1]) for row in self.liststore]
-
-	def on_add_to_menu(self, button):
-		exec_path = os.path.abspath(__file__)
-		create_desktop_file(exec_path)
-		show_notification("Added SSH Bookmark Manager to menu.", parent=self)
-
-	def on_autostart_toggle(self, switch, gparam):
-		if switch.get_active():
-			add_to_autostart(True)
-			show_notification("Autostart enabled.", parent=self)
-		else:
-			add_to_autostart(False)
-			show_notification("Autostart disabled.", parent=self)
-
-class SSHTrayApp:
-	def __init__(self):
-		self.terminal = read_config_terminal()
-		self.app = AppIndicator3.Indicator.new(
-			'ssh-bookmarks', ICON_NAME,
-			AppIndicator3.IndicatorCategory.APPLICATION_STATUS)
-		self.app.set_status(AppIndicator3.IndicatorStatus.ACTIVE)
-		self.app.set_title("Open SSH connection")
-		self.menu = Gtk.Menu()
-		self.build_menu()
-		self.app.set_menu(self.menu)
-
-	def build_menu(self):
-		self.menu.foreach(lambda widget: self.menu.remove(widget))
-		bookmarks = load_bookmarks()
-		for label, target in bookmarks:
-			if label == '__GROUP__':
-				item = Gtk.MenuItem(label=target)
-				item.set_sensitive(False)
-				item.get_child().set_markup(f'<b>{target}</b>')
-				self.menu.append(item)
-			else:
-				item = Gtk.MenuItem(label=label)
-				item.connect('activate', self.on_bookmark_activate, target, label)
-				self.menu.append(item)
-		self.menu.append(Gtk.SeparatorMenuItem())
-		edit_item = Gtk.MenuItem(label="Edit bookmarks/config")
-		edit_item.connect('activate', self.on_edit_bookmarks)
-		self.menu.append(edit_item)
-		instr_item = Gtk.MenuItem(label="Show instructions")
-		instr_item.connect('activate', self.on_show_instructions)
-		self.menu.append(instr_item)
-		self.menu.append(Gtk.SeparatorMenuItem())
-		quit_item = Gtk.MenuItem(label="Quit")
-		quit_item.connect('activate', self.quit)
-		self.menu.append(quit_item)
-		self.menu.show_all()
-
-	def on_bookmark_activate(self, widget, target, label):
-		open_ssh_in_terminal(self.terminal, target, label)
-
-	def on_edit_bookmarks(self, widget):
-		def refresh_menu():
-			self.terminal = read_config_terminal()
-			self.build_menu()
-		bookmarks = load_bookmarks()
-		dialog = EditBookmarksDialog(None, bookmarks, self.terminal, on_change_callback=refresh_menu)
-		dialog.run()
-		dialog.destroy()
-
-	def on_show_instructions(self, widget):
-		show_instructions()
-
-	def quit(self, widget):
-		Gtk.main_quit()
-
-def main():
-	created = ensure_config_files()
-	app = SSHTrayApp()
-	if created:
-		show_instructions()
-	Gtk.main()
-
-if __name__ == '__main__':
-	main()
-</file>
-
-<file path="config/ssh_bookmarks.sample.txt">
-# SSH Bookmark Manager - Sample Bookmarks File
-# Copy this to ~/.ssh_bookmarks and customize for your servers
-#
-# Format:
-#   - Bookmarks: DESCRIPTION<tab>user@host[:port]
-#   - Groups: ------ Group Name ------
-#   - Comments: Lines starting with #
-#
-# Example bookmarks:
-
------- Development Servers ------
-Dev Server 1	root@192.168.1.10
-Dev Server 2	admin@192.168.1.11
-Database Dev	postgres@192.168.1.20:5432
-
------- Production Servers ------
-Web Server	www-data@prod.example.com
-Database	admin@db.example.com
-Load Balancer	root@lb.example.com
-
------- Personal Servers ------
-Home Server	user@home.example.com:2222
-VPS Instance	root@vps.example.com
-Backup Server	backup@backup.example.com
-
------- Client Sites ------
-Client A Web	deploy@clienta.com
-Client A DB	root@db.clienta.com
-Client B	admin@clientb.net
-
-# You can also use IP addresses with custom ports:
-# My Router	admin@192.168.1.1:22
-# Custom Port Server	user@server.com:2200
-
-# Tips:
-# - Keep descriptions short but descriptive
-# - Group related servers together
-# - Use consistent naming conventions
-# - Test connections manually before adding bookmarks
-</file>
-
-<file path="config/ssh_tray_config.sample.txt">
-# SSH Bookmark Manager - Sample Configuration File
-# Copy this to ~/.ssh_tray_config and customize for your system
-#
-# This file contains settings for the SSH Bookmark Manager application.
-
-# Terminal Emulator Setting
-# Specify which terminal emulator to use for SSH connections
-# Supported terminals: mate-terminal, gnome-terminal, xfce4-terminal, tilix, konsole, lxterminal, xterm
-# You can also specify a full path to a custom terminal
-terminal=mate-terminal
-
-# Examples for different desktop environments:
-# terminal=gnome-terminal    # For GNOME desktop
-# terminal=xfce4-terminal    # For XFCE desktop
-# terminal=mate-terminal     # For MATE desktop
-# terminal=konsole           # For KDE desktop
-# terminal=tilix             # For modern GTK terminal
-# terminal=lxterminal        # For LXDE desktop
-# terminal=xterm             # Fallback terminal
-
-# Custom terminal examples:
-# terminal=/usr/bin/gnome-terminal
-# terminal=/opt/custom-terminal/bin/terminal
-# terminal=kitty             # If kitty terminal is in PATH
-
-# Notes:
-# - The terminal must be installed and available in your PATH
-# - If the specified terminal is not found, the application will try to use a fallback
-# - Some terminals may have different command-line argument formats
-# - Test your terminal choice by running it manually before configuring
-</file>
-
-<file path="config/ssh_tray_uninstall.desktop">
-[Desktop Entry]
-Type=Application
-Name=Uninstall SSH Bookmark Manager
-Exec=ssh-tray --uninstall
-Icon=application-exit
-Terminal=true
-Categories=System;Settings;
-Comment=Remove SSH Bookmark Manager from your system
-Keywords=uninstall;remove;ssh;bookmark;tray;
-StartupNotify=false
-NoDisplay=false
-</file>
-
-<file path="scripts/git_init.sh">
-#!/bin/bash
-# git_init.sh - Initialize SSH Bookmark Manager repository on GitHub
-# This script clears the existing repo and creates a fresh one with the new structure
-
-set -e
-
-# --- Settings ---
-GITHUB_USER="vordan"
-REPO_NAME="ssh-tray"
-GIT_EMAIL="vordan@infoproject.biz"
-GIT_NAME="Vanco Ordanoski"
-REPO_DESCRIPTION="SSH Bookmark Manager - Linux tray application for managing SSH bookmarks"
-# ---------------
-
-echo "==============================================================================="
-echo "SSH Bookmark Manager - GitHub Repository Initialization"
-echo "==============================================================================="
-echo
-echo "This script will:"
-echo "  1. Delete the existing GitHub repository: $GITHUB_USER/$REPO_NAME"
-echo "  2. Create a fresh new repository with the same name"
-echo "  3. Initialize local git repository"
-echo "  4. Make initial commit with the reorganized structure"
-echo "  5. Push to GitHub as the main branch"
-echo
-echo "WARNING: This will permanently delete the existing repository and all its history!"
-echo
-
-# Function: yes/no confirmation prompt
-function confirm() {
-	while true; do
-		read -r -p "$1 [Y/n] " answer
-		case "$answer" in
-			[Yy][Ee][Ss]|[Yy]|"") return 0 ;;
-			[Nn][Oo]|[Nn]) return 1 ;;
-			*) echo "Please answer Y or n." ;;
-		esac
-	done
-}
-
-# Check for GitHub CLI
-if ! command -v gh >/dev/null 2>&1; then
-	echo "ERROR: GitHub CLI (gh) is required but not installed."
-	echo "Please install it first: sudo apt install gh"
-	echo "Or run: ./scripts/github_cli_install.sh"
-	exit 1
-fi
-
-# Auto-detect project root directory and change to it
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-if [[ "$(basename "$SCRIPT_DIR")" == "scripts" ]]; then
-	# Running from scripts/ directory, go up one level
-	PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
-	echo "Detected running from scripts/ directory, changing to project root..."
-	cd "$PROJECT_ROOT"
-fi
-
-# Check if we're in the right directory (should have src/ and scripts/)
-if [[ ! -d "src" || ! -d "scripts" ]]; then
-	echo "ERROR: Cannot find SSH Bookmark Manager project structure."
-	echo "Expected to find src/ and scripts/ directories."
-	echo "Current directory: $(pwd)"
-	echo "Please run this script from the project root or scripts/ directory."
-	exit 1
-fi
-
-echo "Working in project directory: $(pwd)"
-
-# Confirm repository deletion
-if ! confirm "Delete existing repository $GITHUB_USER/$REPO_NAME and create fresh one?"; then
-	echo "Aborted by user."
-	exit 1
-fi
-
-echo
-echo "Setting up git configuration..."
-git config --global user.name "$GIT_NAME"
-git config --global user.email "$GIT_EMAIL"
-
-# Add current directory as safe directory to avoid 'dubious ownership' warnings
-CURRENT_DIR="$(pwd)"
-echo "Adding current directory as git safe directory..."
-git config --global --add safe.directory "$CURRENT_DIR"
-
-echo "Checking if GitHub repository exists..."
-if gh repo view "$GITHUB_USER/$REPO_NAME" >/dev/null 2>&1; then
-	echo "Repository exists. Deleting existing GitHub repository..."
-	if gh repo delete "$GITHUB_USER/$REPO_NAME" --confirm; then
-		echo "✓ Repository deleted successfully"
-		# Wait a moment for GitHub to process the deletion
-		echo "Waiting for GitHub to process deletion..."
-		sleep 3
-	else
-		echo "ERROR: Failed to delete repository. Please delete it manually:"
-		echo "  https://github.com/$GITHUB_USER/$REPO_NAME/settings"
-		echo "Or delete via CLI: gh repo delete $GITHUB_USER/$REPO_NAME --confirm"
-		exit 1
-	fi
-else
-	echo "ℹ Repository does not exist"
-fi
-
-echo "Creating new GitHub repository..."
-if gh repo create "$GITHUB_USER/$REPO_NAME" --public --description "$REPO_DESCRIPTION"; then
-	echo "✓ New repository created successfully"
-else
-	echo "ERROR: Failed to create repository. It may still exist or deletion is still processing."
-	echo "Please wait a few minutes and try again, or delete manually first:"
-	echo "  https://github.com/$GITHUB_USER/$REPO_NAME"
-	exit 1
-fi
-
-echo "Initializing local git repository..."
-# Remove any existing git directory
-if [[ -d ".git" ]]; then
-	rm -rf .git
-fi
-
-git init
-echo "✓ Git repository initialized"
-
-echo "Adding all files..."
-git add .
-
-echo "Creating initial commit..."
-git commit -m "Initial commit: Reorganized SSH Bookmark Manager with modular structure
-
-- Restructured as proper Python package in src/ssh_tray/
-- Moved scripts to scripts/ directory
-- Added sample configuration files in config/
-- Updated installation to use /opt/ssh-tray (follows Linux FHS)
-- Improved code documentation and organization
-- Maintained original coding style and functionality
-- Added proper package structure with __init__.py
-- Fixed import statements for modular architecture
-- Enhanced system integration and autostart features"
-
-echo "Setting main branch..."
-git branch -M main
-
-echo "Adding remote origin..."
-git remote add origin "https://github.com/$GITHUB_USER/$REPO_NAME.git"
-
-echo "Pushing to GitHub..."
-git push -u origin main
-
-echo
-echo "==============================================================================="
-echo "✓ SUCCESS: Repository initialized and pushed to GitHub!"
-echo "==============================================================================="
-echo
-echo "Repository URL: https://github.com/$GITHUB_USER/$REPO_NAME"
-echo "Clone command: git clone https://github.com/$GITHUB_USER/$REPO_NAME.git"
-echo
-echo "Next steps:"
-echo "  - View your repository: gh repo view --web"
-echo "  - For future commits, use: ./scripts/git_commit.sh \"Your commit message\""
-echo "  - Test the installation: ./scripts/install.sh"
-echo
-</file>
-
-<file path="scripts/github_cli_install.sh">
-#!/bin/bash
-# github_cli_install.sh - Install GitHub CLI ('gh') for Ubuntu/Mint
-
-set -e
-
-if command -v gh >/dev/null 2>&1; then
-	echo "GitHub CLI (gh) is already installed: $(gh --version | head -1)"
-	exit 0
-fi
-
-echo "Trying to install GitHub CLI (gh) using the official apt repository..."
-
-type -p curl >/dev/null || sudo apt install curl -y
-
-if ! grep -q githubcli /etc/apt/sources.list /etc/apt/sources.list.d/* 2>/dev/null; then
-	curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | \
-		sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
-	sudo chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg
-	echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | \
-		sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
-	sudo apt update
-fi
-
-if sudo apt install gh -y; then
-	echo "GitHub CLI installed successfully (via apt)."
-	gh --version
-	exit 0
-else
-	echo "Apt installation failed. Trying to install via Snap..."
-	if command -v snap >/dev/null 2>&1; then
-		sudo snap install gh
-		echo "GitHub CLI installed successfully (via snap)."
-		gh --version
-		exit 0
-	else
-		echo "Snap not available and apt install failed. Please install manually from https://github.com/cli/cli/releases"
-		exit 1
-	fi
-fi
-</file>
-
-<file path="scripts/make_ssh_tray_project.sh">
-#!/bin/bash
-
-cat <<EOF
-===============================================================================
-make_ssh_tray_project.sh
-------------------------
-This script will:
-
- - Create a new project folder (default: ./ssh-tray) in your current directory.
- - Set up the proper directory structure with src/, scripts/, and archive/ folders.
- - Write all SSH Bookmark Manager source files into the appropriate locations.
- - This is for DEVELOPERS, packagers, or for preparing a project structure.
- - It does NOT install, run, or fetch files from the Internet.
- - You will be able to edit, ZIP, or upload the project to GitHub or other repositories.
-
-No code will be executed outside the folder, and no symlinks or system files will be touched.
-
-Are you sure you want to CONTINUE? [Y/n]
-===============================================================================
-EOF
-
-read -r ok
-case "$ok" in [nN]*) echo "Aborted."; exit 1;; esac
-
-# Choose folder name
-DEFAULT_DIR="ssh-tray"
-echo
-read -p "Enter directory for project output [${DEFAULT_DIR}]: " OUT_DIR
-OUT_DIR="${OUT_DIR:-$DEFAULT_DIR}"
-
-# Create directory structure
-echo "Creating project structure in $(pwd)/$OUT_DIR ..."
-mkdir -p "$OUT_DIR"/{src/ssh_tray,scripts,archive,config}
-cd "$OUT_DIR"
-
-# Create package __init__.py
-cat > src/ssh_tray/__init__.py <<'EOF'
-"""
-SSH Bookmark Manager Package
-============================
-
-A Linux tray application for managing SSH bookmarks with group support,
-configurable terminals, and desktop integration.
-
-Author: Vanco Ordanoski
-Company: Infoproject LLC, North Macedonia
-License: MIT
-"""
-
-__version__ = "1.0.0"
-__author__ = "Vanco Ordanoski"
-__email__ = "vordan@infoproject.biz"
-__company__ = "Infoproject LLC"
-EOF
-
-# Create main application module
-cat > src/ssh_tray/main.py <<'EOF'
-#!/usr/bin/env python3
-"""
-Main entry point for SSH Bookmark Manager tray application.
-Manages the system tray icon, builds menus from bookmarks, and handles user interactions.
-"""
-
-import gi
-gi.require_version('Gtk', '3.0')
-gi.require_version('AppIndicator3', '0.1')
-from gi.repository import Gtk, AppIndicator3
-
-from .configuration import (
-	read_config_terminal, ensure_config_files, load_bookmarks, show_instructions
-)
-from .system import (
-	open_ssh_in_terminal, ICON_NAME
-)
-from .editor import EditBookmarksDialog
-
-class SSHTrayApp:
-	"""Main tray application class that manages the indicator and menu."""
-	
-	def __init__(self):
-		"""Initialize the tray application with indicator and menu."""
-		self.terminal = read_config_terminal()
-		
-		# Create the system tray indicator
-		self.app = AppIndicator3.Indicator.new(
-			'ssh-bookmarks', ICON_NAME,
-			AppIndicator3.IndicatorCategory.APPLICATION_STATUS)
-		self.app.set_status(AppIndicator3.IndicatorStatus.ACTIVE)
-		self.app.set_title("Open SSH connection")
-		
-		# Initialize and build the context menu
-		self.menu = Gtk.Menu()
-		self.build_menu()
-		self.app.set_menu(self.menu)
-
-	def build_menu(self):
-		"""Build the tray context menu from bookmarks and add control items."""
-		# Clear existing menu items
-		self.menu.foreach(lambda widget: self.menu.remove(widget))
-		
-		# Load bookmarks and create menu items
-		bookmarks = load_bookmarks()
-		for label, target in bookmarks:
-			if label == '__GROUP__':
-				# Create group header (disabled, bold text)
-				item = Gtk.MenuItem(label=target)
-				item.set_sensitive(False)
-				item.get_child().set_markup(f'<b>{target}</b>')
-				self.menu.append(item)
-			else:
-				# Create clickable bookmark item
-				item = Gtk.MenuItem(label=label)
-				item.connect('activate', self.on_bookmark_activate, target, label)
-				self.menu.append(item)
-		
-		# Add separator and control menu items
-		self.menu.append(Gtk.SeparatorMenuItem())
-		
-		edit_item = Gtk.MenuItem(label="Edit bookmarks/config")
-		edit_item.connect('activate', self.on_edit_bookmarks)
-		self.menu.append(edit_item)
-		
-		instr_item = Gtk.MenuItem(label="Show instructions")
-		instr_item.connect('activate', self.on_show_instructions)
-		self.menu.append(instr_item)
-		
-		self.menu.append(Gtk.SeparatorMenuItem())
-		
-		quit_item = Gtk.MenuItem(label="Quit")
-		quit_item.connect('activate', self.quit)
-		self.menu.append(quit_item)
-		
-		self.menu.show_all()
-
-	def on_bookmark_activate(self, widget, target, label):
-		"""Handle bookmark menu item click by opening SSH connection."""
-		open_ssh_in_terminal(self.terminal, target, label)
-
-	def on_edit_bookmarks(self, widget):
-		"""Open the bookmark and configuration editor dialog."""
-		def refresh_menu():
-			"""Callback to refresh menu after changes."""
-			self.terminal = read_config_terminal()
-			self.build_menu()
-		
-		bookmarks = load_bookmarks()
-		dialog = EditBookmarksDialog(None, bookmarks, self.terminal, on_change_callback=refresh_menu)
-		dialog.run()
-		dialog.destroy()
-
-	def on_show_instructions(self, widget):
-		"""Display help instructions dialog."""
-		show_instructions()
-
-	def quit(self, widget):
-		"""Exit the application."""
-		Gtk.main_quit()
-
-def main():
-	"""Main application entry point."""
-	# Ensure configuration files exist, show help if first run
-	created = ensure_config_files()
-	
-	# Create and run the tray application
-	app = SSHTrayApp()
-	
-	# Show instructions on first run
-	if created:
-		show_instructions()
-	
-	# Start GTK main loop
-	Gtk.main()
-
-if __name__ == '__main__':
-	main()
-EOF
-
-# Create remaining Python modules
-cat > src/ssh_tray/configuration.py <<'EOF'
-"""
-Configuration and bookmarks management for SSH Tray.
-Handles reading/writing config files, bookmark validation, and help text display.
-"""
-
-import os
-import shutil
-from .system import show_notification, available_terminals
-
-# Configuration file paths in user's home directory
-BOOKMARKS_FILE = os.path.expanduser('~/.ssh_bookmarks')
-CONFIG_FILE = os.path.expanduser('~/.ssh_tray_config')
-
-def ensure_config_files():
-	"""Create default configuration files if they don't exist.
-	
-	Returns:
-		bool: True if files were created (first run), False if they existed
-	"""
-	created = False
-	
-	# Create default terminal configuration
-	if not os.path.exists(CONFIG_FILE):
-		with open(CONFIG_FILE, 'w') as f:
-			f.write('terminal=mate-terminal\n')
-		created = True
-	
-	# Create example bookmarks file
-	if not os.path.exists(BOOKMARKS_FILE):
-		with open(BOOKMARKS_FILE, 'w') as f:
-			f.write('# Example SSH bookmarks:\n')
-			f.write('------ Dev Servers ------\n')
-			f.write('Dev 1 [10.10.10.98]\troot@10.10.10.98\n')
-			f.write('Dev 2 [10.10.11.22]\troot@10.10.11.22\n')
-			f.write('------ Production ------\n')
-			f.write('Prod DB\tadmin@192.168.1.5\n')
-		created = True
-	
-	return created
-
-# ... rest of configuration.py content ...
-EOF
-
-echo "Project structure created successfully in $(pwd)"
-echo
-echo "Directory structure:"
-echo "  src/ssh_tray/     - Python package with application modules"
-echo "  scripts/          - Installation and utility scripts"
-echo "  archive/          - Old versions and backup files"
-echo "  config/           - Sample configuration files"
-echo
-echo "Next steps:"
-echo "  1. Complete the module files in src/ssh_tray/ with full implementations"
-echo "  2. Add installation scripts to scripts/"
-echo "  3. Create README.md, LICENSE.md in the root"
-echo "  4. Test the application structure"
-echo
-echo "Note: This script creates a basic structure. You'll need to complete"
-echo "the implementation of each module with the full source code."
-</file>
-
-<file path="scripts/uninstall.sh">
-#!/bin/bash
-# uninstall.sh - SSH Bookmark Manager Uninstaller
-# Safely removes the application and optionally backs up user configuration
-
-set -e
-
-# --- Settings ---
-INSTALL_DIR="/opt/ssh-tray"
-BIN_SYMLINK="/usr/local/bin/ssh-tray"
-BOOKMARKS_FILE="$HOME/.ssh_bookmarks"
-CONFIG_FILE="$HOME/.ssh_tray_config"
-DESKTOP_FILE="$HOME/.local/share/applications/ssh_tray.desktop"
-AUTOSTART_FILE="$HOME/.config/autostart/ssh_tray.desktop"
-BACKUP_DIR="$HOME/Downloads/ssh-tray-backup-$(date +%Y%m%d-%H%M%S)"
-# ---------------
-
-echo "==============================================================================="
-echo "SSH Bookmark Manager - Uninstaller"
-echo "==============================================================================="
-echo
-echo "This script will remove SSH Bookmark Manager from your system."
-echo
-echo "Files that will be removed:"
-echo "  • Application: $INSTALL_DIR"
-echo "  • Symlink: $BIN_SYMLINK"
-echo "  • Desktop file: $DESKTOP_FILE"
-echo "  • Autostart file: $AUTOSTART_FILE"
-echo
-echo "Configuration files (if they exist):"
-echo "  • Bookmarks: $BOOKMARKS_FILE"
-echo "  • Config: $CONFIG_FILE"
-echo
-
-# Function: yes/no confirmation prompt
-function confirm() {
-	while true; do
-		read -r -p "$1 [Y/n] " answer
-		case "$answer" in
-			[Yy][Ee][Ss]|[Yy]|"") return 0 ;;
-			[Nn][Oo]|[Nn]) return 1 ;;
-			*) echo "Please answer Y or n." ;;
-		esac
-	done
-}
-
-# Function: Check if file exists and is not empty
-function file_exists_and_not_empty() {
-	[[ -f "$1" && -s "$1" ]]
-}
-
-# Function: Stop the application if running
-function stop_application() {
-	echo "Checking if SSH Bookmark Manager is running..."
-	
-	# Find and kill any running instances
-	PIDS=$(pgrep -f "ssh_tray" 2>/dev/null || true)
-	if [[ -n "$PIDS" ]]; then
-		echo "Found running SSH Bookmark Manager processes: $PIDS"
-		if confirm "Stop running SSH Bookmark Manager processes?"; then
-			echo "Stopping SSH Bookmark Manager..."
-			pkill -f "ssh_tray" 2>/dev/null || true
-			sleep 2
-			
-			# Force kill if still running
-			PIDS=$(pgrep -f "ssh_tray" 2>/dev/null || true)
-			if [[ -n "$PIDS" ]]; then
-				echo "Force stopping remaining processes..."
-				pkill -9 -f "ssh_tray" 2>/dev/null || true
-			fi
-			echo "✓ SSH Bookmark Manager stopped"
-		else
-			echo "WARNING: Application is still running. Uninstall may not be complete."
-		fi
-	else
-		echo "✓ No running processes found"
-	fi
-}
-
-# Function: Backup configuration files
-function backup_config_files() {
-	local backup_needed=false
-	
-	# Check if any config files exist and are not empty
-	if file_exists_and_not_empty "$BOOKMARKS_FILE"; then
-		echo "✓ Found bookmarks file with content: $BOOKMARKS_FILE"
-		backup_needed=true
-	fi
-	
-	if file_exists_and_not_empty "$CONFIG_FILE"; then
-		echo "✓ Found config file with content: $CONFIG_FILE"
-		backup_needed=true
-	fi
-	
-	if [[ "$backup_needed" == "true" ]]; then
-		echo
-		echo "You have SSH bookmarks and/or configuration files that will be deleted."
-		if confirm "Create backup of your configuration files before deletion?"; then
-			echo "Creating backup directory: $BACKUP_DIR"
-			mkdir -p "$BACKUP_DIR"
-			
-			if file_exists_and_not_empty "$BOOKMARKS_FILE"; then
-				cp "$BOOKMARKS_FILE" "$BACKUP_DIR/"
-				echo "✓ Backed up: $(basename "$BOOKMARKS_FILE")"
-			fi
-			
-			if file_exists_and_not_empty "$CONFIG_FILE"; then
-				cp "$CONFIG_FILE" "$BACKUP_DIR/"
-				echo "✓ Backed up: $(basename "$CONFIG_FILE")"
-			fi
-			
-			echo "✓ Configuration backup created in: $BACKUP_DIR"
-			echo
-		fi
-	else
-		echo "ℹ No configuration files found or they are empty"
-	fi
-}
-
-# Function: Remove application files
-function remove_application() {
-	echo "Removing application files..."
-	
-	# Remove symlink
-	if [[ -L "$BIN_SYMLINK" ]]; then
-		echo "Removing symlink: $BIN_SYMLINK"
-		sudo rm -f "$BIN_SYMLINK"
-		echo "✓ Symlink removed"
-	elif [[ -f "$BIN_SYMLINK" ]]; then
-		echo "Removing file: $BIN_SYMLINK"
-		sudo rm -f "$BIN_SYMLINK"
-		echo "✓ Binary removed"
-	else
-		echo "ℹ Symlink not found: $BIN_SYMLINK"
-	fi
-	
-	# Remove installation directory
-	if [[ -d "$INSTALL_DIR" ]]; then
-		echo "Removing installation directory: $INSTALL_DIR"
-		sudo rm -rf "$INSTALL_DIR"
-		echo "✓ Installation directory removed"
-	else
-		echo "ℹ Installation directory not found: $INSTALL_DIR"
-	fi
-}
-
-# Function: Remove user files
-function remove_user_files() {
-	echo "Removing user configuration and desktop files..."
-	
-	# Remove desktop file
-	if [[ -f "$DESKTOP_FILE" ]]; then
-		rm -f "$DESKTOP_FILE"
-		echo "✓ Desktop file removed: $DESKTOP_FILE"
-	else
-		echo "ℹ Desktop file not found"
-	fi
-	
-	# Remove autostart file
-	if [[ -f "$AUTOSTART_FILE" ]]; then
-		rm -f "$AUTOSTART_FILE"
-		echo "✓ Autostart file removed: $AUTOSTART_FILE"
-	else
-		echo "ℹ Autostart file not found"
-	fi
-	
-	# Remove config files
-	if [[ -f "$BOOKMARKS_FILE" ]]; then
-		rm -f "$BOOKMARKS_FILE"
-		echo "✓ Bookmarks file removed: $BOOKMARKS_FILE"
-	else
-		echo "ℹ Bookmarks file not found"
-	fi
-	
-	if [[ -f "$CONFIG_FILE" ]]; then
-		rm -f "$CONFIG_FILE"
-		echo "✓ Config file removed: $CONFIG_FILE"
-	else
-		echo "ℹ Config file not found"
-	fi
-}
-
-# Main uninstall process
-echo "Starting uninstall process..."
-echo
-
-# Final confirmation
-if ! confirm "Are you sure you want to completely remove SSH Bookmark Manager?"; then
-	echo "Uninstall cancelled by user."
-	exit 0
-fi
-
-echo
-
-# Stop the application
-stop_application
-echo
-
-# Backup configuration files
-backup_config_files
-
-# Remove application files (requires sudo)
-echo "Application removal requires sudo privileges..."
-if ! sudo -v; then
-	echo "ERROR: sudo access required to remove application from $INSTALL_DIR"
-	exit 1
-fi
-echo
-
-remove_application
-echo
-
-# Remove user files
-if confirm "Remove your personal configuration files and desktop integration?"; then
-	remove_user_files
-else
-	echo "Keeping personal configuration files:"
-	[[ -f "$BOOKMARKS_FILE" ]] && echo "  • $BOOKMARKS_FILE"
-	[[ -f "$CONFIG_FILE" ]] && echo "  • $CONFIG_FILE"
-	[[ -f "$DESKTOP_FILE" ]] && echo "  • $DESKTOP_FILE"
-	[[ -f "$AUTOSTART_FILE" ]] && echo "  • $AUTOSTART_FILE"
-fi
-
-echo
-echo "==============================================================================="
-echo "✓ SSH Bookmark Manager uninstall completed!"
-echo "==============================================================================="
-echo
-
-# Show backup location if created
-if [[ -d "$BACKUP_DIR" ]]; then
-	echo "Your configuration backup is saved at:"
-	echo "  $BACKUP_DIR"
-	echo
-	echo "Backup contains:"
-	ls -la "$BACKUP_DIR"
-	echo
-fi
-
-echo "What was removed:"
-echo "  • Application directory: $INSTALL_DIR"
-echo "  • Command symlink: $BIN_SYMLINK"
-echo "  • Desktop integration files"
-echo "  • Configuration files (if selected)"
-echo
-echo "To reinstall SSH Bookmark Manager, run the installer script again."
-echo "Your backed up configuration can be restored by copying the files back to:"
-echo "  • $BOOKMARKS_FILE"
-echo "  • $CONFIG_FILE"
-echo
 </file>
 
 <file path="web/index.html">
@@ -3143,134 +2899,256 @@ cd "$SCRIPT_DIR"
 exec python3 src/ssh_tray.py "$@"
 </file>
 
-<file path="src/ssh_tray.py">
-#!/usr/bin/env python3
-"""
-SSH Bookmark Manager - Main Launcher Script
-============================================
+<file path="scripts/uninstall.sh">
+#!/bin/bash
+# uninstall.sh - SSH Bookmark Manager Uninstaller
+# Safely removes the application and optionally backs up user configuration
 
-This is the main entry point for the SSH Bookmark Manager application.
-It imports and runs the main application from the ssh_tray package.
+set -e
 
-Author: Vanco Ordanoski
-Company: Infoproject LLC, North Macedonia
-License: MIT
-"""
+# --- Settings ---
+INSTALL_DIR="/opt/ssh-tray"
+BIN_SYMLINK="/usr/local/bin/ssh-tray"
+BOOKMARKS_FILE="$HOME/.ssh_bookmarks"
+CONFIG_FILE="$HOME/.ssh_tray_config"
+DESKTOP_FILE="$HOME/.local/share/applications/ssh_tray.desktop"
+AUTOSTART_FILE="$HOME/.config/autostart/ssh_tray.desktop"
+BACKUP_DIR="$HOME/Downloads/ssh-tray-backup-$(date +%Y%m%d-%H%M%S)"
+# ---------------
 
-import sys
-import os
-import subprocess
+echo "==============================================================================="
+echo "SSH Bookmark Manager - Uninstaller"
+echo "==============================================================================="
+echo
+echo "This script will remove SSH Bookmark Manager from your system."
+echo
+echo "Files that will be removed:"
+echo "  • Application: $INSTALL_DIR"
+echo "  • Symlink: $BIN_SYMLINK"
+echo "  • Desktop file: $DESKTOP_FILE"
+echo "  • Autostart file: $AUTOSTART_FILE"
+echo
+echo "Configuration files (if they exist):"
+echo "  • Bookmarks: $BOOKMARKS_FILE"
+echo "  • Config: $CONFIG_FILE"
+echo
 
-def show_help():
-	"""Display help information and available commands."""
-	print("SSH Bookmark Manager")
-	print("===================")
-	print()
-	print("Usage:")
-	print("  ssh-tray                 Start the tray application")
-	print("  ssh-tray --help          Show this help message")
-	print("  ssh-tray --version       Show version information")
-	print("  ssh-tray --uninstall     Uninstall SSH Bookmark Manager")
-	print()
-	print("Configuration files:")
-	print("  ~/.ssh_bookmarks         Your SSH bookmarks")
-	print("  ~/.ssh_tray_config       Terminal and application settings")
-	print()
-	print("For more information, see the tray menu when the application is running.")
+# Function: yes/no confirmation prompt
+function confirm() {
+	while true; do
+		read -r -p "$1 [Y/n] " answer
+		case "$answer" in
+			[Yy][Ee][Ss]|[Yy]|"") return 0 ;;
+			[Nn][Oo]|[Nn]) return 1 ;;
+			*) echo "Please answer Y or n." ;;
+		esac
+	done
+}
 
-def show_version():
-	"""Display version information."""
-	try:
-		# Add the parent directory to Python path to find the ssh_tray package
-		sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-		from ssh_tray import __version__, __author__, __company__
+# Function: Check if file exists and is not empty
+function file_exists_and_not_empty() {
+	[[ -f "$1" && -s "$1" ]]
+}
 
-		print(f"SSH Bookmark Manager v{__version__}")
-		print(f"Author: {__author__}")
-		print(f"Company: {__company__}")
-		print("License: MIT")
-	except ImportError:
-		print("SSH Bookmark Manager")
-		print("Version information unavailable")
+# Function: Stop the application if running
+function stop_application() {
+	echo "Checking if SSH Bookmark Manager is running..."
 
-def run_uninstaller():
-	"""Run the uninstaller script."""
-	# Find the uninstaller script
-	script_dir = os.path.dirname(os.path.abspath(__file__))
+	# Find and kill any running instances
+	PIDS=$(pgrep -f "ssh_tray" 2>/dev/null || true)
+	if [[ -n "$PIDS" ]]; then
+		echo "Found running SSH Bookmark Manager processes: $PIDS"
+		if confirm "Stop running SSH Bookmark Manager processes?"; then
+			echo "Stopping SSH Bookmark Manager..."
+			pkill -f "ssh_tray" -u "$(id -u)" 2>/dev/null || true
+			sleep 2
 
-	# Try different possible locations for the uninstaller
-	possible_paths = [
-		os.path.join(script_dir, 'uninstall.sh'),
-		os.path.join(script_dir, 'scripts', 'uninstall.sh'),
-		'/usr/local/bin/ssh-tray-uninstall',
-		'/opt/ssh-tray/uninstall.sh'
-	]
+			# Force kill if still running
+			PIDS=$(pgrep -f "ssh_tray" 2>/dev/null || true)
+			if [[ -n "$PIDS" ]]; then
+				echo "Force stopping remaining processes..."
+				pkill -9 -f "ssh_tray" -u "$(id -u)" 2>/dev/null || true
+			fi
+			echo "✓ SSH Bookmark Manager stopped"
+		else
+			echo "WARNING: Application is still running. Uninstall may not be complete."
+		fi
+	else
+		echo "✓ No running processes found"
+	fi
+}
 
-	uninstaller_path = None
-	for path in possible_paths:
-		if os.path.exists(path) and os.access(path, os.X_OK):
-			uninstaller_path = path
-			break
+# Function: Backup configuration files
+function backup_config_files() {
+	local backup_needed=false
 
-	if uninstaller_path:
-		print("Starting SSH Bookmark Manager uninstaller...")
-		try:
-			# Execute the uninstaller script
-			subprocess.run([uninstaller_path], check=True)
-		except subprocess.CalledProcessError as e:
-			print(f"Uninstaller exited with error code {e.returncode}")
-			sys.exit(e.returncode)
-		except KeyboardInterrupt:
-			print("\nUninstall cancelled by user.")
-			sys.exit(1)
-	else:
-		print("ERROR: Uninstaller script not found.")
-		print("Please run the uninstaller manually:")
-		print("  /opt/ssh-tray/uninstall.sh")
-		print("  or")
-		print("  ssh-tray-uninstall")
-		sys.exit(1)
+	# Check if any config files exist and are not empty
+	if file_exists_and_not_empty "$BOOKMARKS_FILE"; then
+		echo "✓ Found bookmarks file with content: $BOOKMARKS_FILE"
+		backup_needed=true
+	fi
 
-def main():
-	"""Main launcher function that handles command-line arguments."""
-	# Check for command-line arguments
-	if len(sys.argv) > 1:
-		arg = sys.argv[1].lower()
+	if file_exists_and_not_empty "$CONFIG_FILE"; then
+		echo "✓ Found config file with content: $CONFIG_FILE"
+		backup_needed=true
+	fi
 
-		if arg in ['--help', '-h', 'help']:
-			show_help()
-			return
-		elif arg in ['--version', '-v', 'version']:
-			show_version()
-			return
-		elif arg in ['--uninstall', 'uninstall']:
-			run_uninstaller()
-			return
-		else:
-			print(f"Unknown argument: {sys.argv[1]}")
-			print("Use 'ssh-tray --help' for available options.")
-			sys.exit(1)
+	if [[ "$backup_needed" == "true" ]]; then
+		echo
+		echo "You have SSH bookmarks and/or configuration files that will be deleted."
+		if confirm "Create backup of your configuration files before deletion?"; then
+			echo "Creating backup directory: $BACKUP_DIR"
+			mkdir -p "$BACKUP_DIR"
 
-	# No arguments provided, start the main application
-	# Add the parent directory to Python path to find the ssh_tray package
-	sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+			if file_exists_and_not_empty "$BOOKMARKS_FILE"; then
+				cp "$BOOKMARKS_FILE" "$BACKUP_DIR/"
+				echo "✓ Backed up: $(basename "$BOOKMARKS_FILE")"
+			fi
 
-	try:
-		# Import and run the main application
-		import ssh_tray.main
-		app_main = ssh_tray.main.main
-		app_main()
+			if file_exists_and_not_empty "$CONFIG_FILE"; then
+				cp "$CONFIG_FILE" "$BACKUP_DIR/"
+				echo "✓ Backed up: $(basename "$CONFIG_FILE")"
+			fi
 
-	except ImportError as e:
-		print(f"Error importing SSH Tray modules: {e}")
-		print("Please ensure the ssh_tray package is properly installed.")
-		sys.exit(1)
-	except Exception as e:
-		print(f"Error starting SSH Bookmark Manager: {e}")
-		sys.exit(1)
+			echo "✓ Configuration backup created in: $BACKUP_DIR"
+			echo
+		fi
+	else
+		echo "ℹ No configuration files found or they are empty"
+	fi
+}
 
-if __name__ == '__main__':
-	main()
+# Function: Remove application files
+function remove_application() {
+	echo "Removing application files..."
+
+	# Remove symlink
+	if [[ -L "$BIN_SYMLINK" ]]; then
+		echo "Removing symlink: $BIN_SYMLINK"
+		sudo rm -f "$BIN_SYMLINK"
+		echo "✓ Symlink removed"
+	elif [[ -f "$BIN_SYMLINK" ]]; then
+		echo "Removing file: $BIN_SYMLINK"
+		sudo rm -f "$BIN_SYMLINK"
+		echo "✓ Binary removed"
+	else
+		echo "ℹ Symlink not found: $BIN_SYMLINK"
+	fi
+
+	# Remove installation directory
+	if [[ -d "$INSTALL_DIR" ]]; then
+		echo "Removing installation directory: $INSTALL_DIR"
+		sudo rm -rf "$INSTALL_DIR"
+		echo "✓ Installation directory removed"
+	else
+		echo "ℹ Installation directory not found: $INSTALL_DIR"
+	fi
+}
+
+# Function: Remove user files
+function remove_user_files() {
+	echo "Removing user configuration and desktop files..."
+
+	# Remove desktop file
+	if [[ -f "$DESKTOP_FILE" ]]; then
+		rm -f "$DESKTOP_FILE"
+		echo "✓ Desktop file removed: $DESKTOP_FILE"
+	else
+		echo "ℹ Desktop file not found"
+	fi
+
+	# Remove autostart file
+	if [[ -f "$AUTOSTART_FILE" ]]; then
+		rm -f "$AUTOSTART_FILE"
+		echo "✓ Autostart file removed: $AUTOSTART_FILE"
+	else
+		echo "ℹ Autostart file not found"
+	fi
+
+	# Remove config files
+	if [[ -f "$BOOKMARKS_FILE" ]]; then
+		rm -f "$BOOKMARKS_FILE"
+		echo "✓ Bookmarks file removed: $BOOKMARKS_FILE"
+	else
+		echo "ℹ Bookmarks file not found"
+	fi
+
+	if [[ -f "$CONFIG_FILE" ]]; then
+		rm -f "$CONFIG_FILE"
+		echo "✓ Config file removed: $CONFIG_FILE"
+	else
+		echo "ℹ Config file not found"
+	fi
+}
+
+# Main uninstall process
+echo "Starting uninstall process..."
+echo
+
+# Final confirmation
+if ! confirm "Are you sure you want to completely remove SSH Bookmark Manager?"; then
+	echo "Uninstall cancelled by user."
+	exit 0
+fi
+
+echo
+
+# Stop the application
+stop_application
+echo
+
+# Backup configuration files
+backup_config_files
+
+# Remove application files (requires sudo)
+echo "Application removal requires sudo privileges..."
+if ! sudo -v; then
+	echo "ERROR: sudo access required to remove application from $INSTALL_DIR"
+	exit 1
+fi
+echo
+
+remove_application
+echo
+
+# Remove user files
+if confirm "Remove your personal configuration files and desktop integration?"; then
+	remove_user_files
+else
+	echo "Keeping personal configuration files:"
+	[[ -f "$BOOKMARKS_FILE" ]] && echo "  • $BOOKMARKS_FILE"
+	[[ -f "$CONFIG_FILE" ]] && echo "  • $CONFIG_FILE"
+	[[ -f "$DESKTOP_FILE" ]] && echo "  • $DESKTOP_FILE"
+	[[ -f "$AUTOSTART_FILE" ]] && echo "  • $AUTOSTART_FILE"
+fi
+
+echo
+echo "==============================================================================="
+echo "✓ SSH Bookmark Manager uninstall completed!"
+echo "==============================================================================="
+echo
+
+# Show backup location if created
+if [[ -d "$BACKUP_DIR" ]]; then
+	echo "Your configuration backup is saved at:"
+	echo "  $BACKUP_DIR"
+	echo
+	echo "Backup contains:"
+	ls -la "$BACKUP_DIR"
+	echo
+fi
+
+echo "What was removed:"
+echo "  • Application directory: $INSTALL_DIR"
+echo "  • Command symlink: $BIN_SYMLINK"
+echo "  • Desktop integration files"
+echo "  • Configuration files (if selected)"
+echo
+echo "To reinstall SSH Bookmark Manager, run the installer script again."
+echo "Your backed up configuration can be restored by copying the files back to:"
+echo "  • $BOOKMARKS_FILE"
+echo "  • $CONFIG_FILE"
+echo
 </file>
 
 <file path="MAKE.md">
@@ -3696,6 +3574,317 @@ The project was restructured from a single monolithic file (`ssh_tray.old.py`) t
 Legacy configuration files remain compatible, requiring no user migration.
 </file>
 
+<file path="scripts/git_commit.sh">
+#!/bin/bash
+# git_commit.sh - Commit and push changes to SSH Bookmark Manager repository
+# Usage: ./scripts/git_commit.sh "Your commit message"
+
+set -e
+
+# --- Settings ---
+GITHUB_USER="vordan"
+REPO_NAME="ssh-tray"
+# ---------------
+
+# Function: yes/no confirmation prompt with custom default
+function confirm() {
+	local prompt="$1"
+	local default="$2"  # "Y" or "N"
+	
+	if [[ "$default" == "N" ]]; then
+		prompt="$prompt [y/N]"
+	else
+		prompt="$prompt [Y/n]"
+	fi
+	
+	while true; do
+		read -r -p "$prompt " answer
+		case "$answer" in
+			[Yy][Ee][Ss]|[Yy]) return 0 ;;
+			[Nn][Oo]|[Nn]) return 1 ;;
+			"") 
+				if [[ "$default" == "N" ]]; then
+					return 1  # Default No
+				else
+					return 0  # Default Yes
+				fi
+				;;
+			*) echo "Please answer y or n." ;;
+		esac
+	done
+}
+
+# Check for commit message or prompt for one
+if [[ -z "$1" ]]; then
+	echo "No commit message provided."
+	echo
+	read -r -p "Enter commit message: " COMMIT_MSG
+	
+	# Check if user provided a message
+	if [[ -z "$COMMIT_MSG" ]]; then
+		echo "Error: Commit message cannot be empty."
+		echo
+		echo "Usage: $0 \"commit message\""
+		echo
+		echo "Examples:"
+		echo "  $0 \"Fix terminal detection bug\""
+		echo "  $0 \"Add support for new terminal emulator\""
+		echo "  $0 \"Update documentation and README\""
+		exit 1
+	fi
+else
+	COMMIT_MSG="$1"
+fi
+
+echo "==============================================================================="
+echo "SSH Bookmark Manager - Git Commit & Push"
+echo "==============================================================================="
+echo
+
+# Auto-detect project root directory and change to it
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ "$(basename "$SCRIPT_DIR")" == "scripts" ]]; then
+	# Running from scripts/ directory, go up one level
+	PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+	echo "Detected running from scripts/ directory, changing to project root..."
+	cd "$PROJECT_ROOT"
+fi
+
+# Check if we're in a git repository
+if [[ ! -d ".git" ]]; then
+	echo "ERROR: Not in a git repository."
+	echo "Current directory: $(pwd)"
+	echo "If this is a new project, run ./scripts/git_init.sh first."
+	exit 1
+fi
+
+# Verify we're in the right project (should have src/ and scripts/)
+if [[ ! -d "src" || ! -d "scripts" ]]; then
+	echo "ERROR: Cannot find SSH Bookmark Manager project structure."
+	echo "Expected to find src/ and scripts/ directories."
+	echo "Current directory: $(pwd)"
+	exit 1
+fi
+
+echo "Working in project directory: $(pwd)"
+
+# Check if we have the correct remote
+REMOTE_URL=$(git remote get-url origin 2>/dev/null || echo "")
+EXPECTED_URL="https://github.com/$GITHUB_USER/$REPO_NAME.git"
+
+if [[ "$REMOTE_URL" != "$EXPECTED_URL" ]]; then
+	echo "WARNING: Remote origin URL doesn't match expected repository."
+	echo "Current: $REMOTE_URL"
+	echo "Expected: $EXPECTED_URL"
+	echo
+	if ! confirm "Continue anyway?" "N"; then
+		echo "Aborted by user."
+		exit 1
+	fi
+fi
+
+# Show git status
+echo "Current repository status:"
+MODIFIED_COUNT=$(git status --porcelain | wc -l)
+NEW_FILES=$(git status --porcelain | grep "^??" | wc -l)
+STAGED_COUNT=$(git status --porcelain | grep "^[AMDR]" | wc -l)
+
+echo "  Modified/Deleted: $(($MODIFIED_COUNT - $NEW_FILES))"
+echo "  New files: $NEW_FILES"
+echo "  Already staged: $STAGED_COUNT"
+echo
+
+# Show changes summary
+if [[ $MODIFIED_COUNT -eq 0 ]]; then
+	echo "No changes to commit."
+	exit 0
+fi
+
+echo "Files that will be added/committed:"
+git status --short
+echo
+
+# Confirm commit
+echo "Commit message: \"$COMMIT_MSG\""
+echo
+if ! confirm "Review changes and continue with commit and push?" "Y"; then
+	echo "Aborted by user."
+	exit 1
+fi
+
+# Optional: Show detailed diff (default: No)
+echo
+if confirm "Show detailed diff before committing?" "N"; then
+	echo
+	echo "==============================================================================="
+	echo "DIFF PREVIEW:"
+	echo "==============================================================================="
+	git diff HEAD 2>/dev/null || git diff --cached 2>/dev/null || git diff
+	echo "==============================================================================="
+	echo
+	if ! confirm "Proceed with commit after reviewing diff?" "Y"; then
+		echo "Aborted by user."
+		exit 1
+	fi
+fi
+
+echo "Adding all changes (including new files and folders)..."
+git add .
+
+# Show what will be committed
+echo "Files to be committed:"
+git diff --cached --name-status
+
+echo "Committing changes..."
+git commit -m "$COMMIT_MSG"
+
+echo "Pushing to GitHub..."
+git push
+
+echo
+echo "==============================================================================="
+echo "✓ SUCCESS: Changes committed and pushed to GitHub!"
+echo "==============================================================================="
+echo
+echo "Commit: $COMMIT_MSG"
+echo "Repository: https://github.com/$GITHUB_USER/$REPO_NAME"
+echo
+echo "View changes:"
+echo "  - On GitHub: https://github.com/$GITHUB_USER/$REPO_NAME/commits"
+echo "  - Locally: git log --oneline -10"
+echo
+</file>
+
+<file path="src/ssh_tray.py">
+#!/usr/bin/env python3
+"""
+SSH Bookmark Manager - Main Launcher Script
+============================================
+
+This is the main entry point for the SSH Bookmark Manager application.
+It imports and runs the main application from the ssh_tray package.
+
+Author: Vanco Ordanoski
+Company: Infoproject LLC, North Macedonia
+License: MIT
+"""
+
+import sys
+import os
+import subprocess
+
+def show_help():
+	"""Display help information and available commands."""
+	print("SSH Bookmark Manager")
+	print("===================")
+	print()
+	print("Usage:")
+	print("  ssh-tray                 Start the tray application")
+	print("  ssh-tray --help          Show this help message")
+	print("  ssh-tray --version       Show version information")
+	print("  ssh-tray --uninstall     Uninstall SSH Bookmark Manager")
+	print()
+	print("Configuration files:")
+	print("  ~/.ssh_bookmarks         Your SSH bookmarks")
+	print("  ~/.ssh_tray_config       Terminal and application settings")
+	print()
+	print("For more information, see the tray menu when the application is running.")
+
+def show_version():
+	"""Display version information."""
+	try:
+		# Add the parent directory to Python path to find the ssh_tray package
+		sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+		from ssh_tray import __version__, __author__, __company__
+
+		print(f"SSH Bookmark Manager v{__version__}")
+		print(f"Author: {__author__}")
+		print(f"Company: {__company__}")
+		print("License: MIT")
+	except ImportError:
+		print("SSH Bookmark Manager")
+		print("Version information unavailable")
+
+def run_uninstaller():
+	"""Run the uninstaller script."""
+	# Find the uninstaller script
+	script_dir = os.path.dirname(os.path.abspath(__file__))
+
+	# Try different possible locations for the uninstaller
+	possible_paths = [
+		os.path.join(script_dir, 'uninstall.sh'),
+		os.path.join(script_dir, 'scripts', 'uninstall.sh'),
+		'/usr/local/bin/ssh-tray-uninstall',
+		'/opt/ssh-tray/uninstall.sh'
+	]
+
+	uninstaller_path = None
+	for path in possible_paths:
+		if os.path.exists(path) and os.access(path, os.X_OK):
+			uninstaller_path = path
+			break
+
+	if uninstaller_path:
+		print("Starting SSH Bookmark Manager uninstaller...")
+		try:
+			# Execute the uninstaller script
+			subprocess.run([uninstaller_path], check=True)
+		except subprocess.CalledProcessError as e:
+			print(f"Uninstaller exited with error code {e.returncode}")
+			sys.exit(e.returncode)
+		except KeyboardInterrupt:
+			print("\nUninstall cancelled by user.")
+			sys.exit(1)
+	else:
+		print("ERROR: Uninstaller script not found.")
+		print("Please run the uninstaller manually:")
+		print("  /opt/ssh-tray/uninstall.sh")
+		print("  or")
+		print("  ssh-tray-uninstall")
+		sys.exit(1)
+
+def main():
+	"""Main launcher function that handles command-line arguments."""
+	# Check for command-line arguments
+	if len(sys.argv) > 1:
+		arg = sys.argv[1].lower()
+
+		if arg in ['--help', '-h', 'help']:
+			show_help()
+			return
+		elif arg in ['--version', '-v', 'version']:
+			show_version()
+			return
+		elif arg in ['--uninstall', 'uninstall']:
+			run_uninstaller()
+			return
+		else:
+			print(f"Unknown argument: {sys.argv[1]}")
+			print("Use 'ssh-tray --help' for available options.")
+			sys.exit(1)
+
+	# No arguments provided, start the main application
+	# Add the parent directory to Python path to find the ssh_tray package
+	sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+	try:
+		# Import and run the main application
+		import ssh_tray.main
+		app_main = ssh_tray.main.main
+		app_main()
+
+	except ImportError as e:
+		print(f"Error importing SSH Tray modules: {e}")
+		print("Please ensure the ssh_tray package is properly installed.")
+		sys.exit(1)
+	except Exception as e:
+		print(f"Error starting SSH Bookmark Manager: {e}")
+		sys.exit(1)
+
+if __name__ == '__main__':
+	main()
+</file>
+
 <file path="README.md">
 # SSH Bookmark Manager
 
@@ -4065,187 +4254,6 @@ MIT License - see [LICENSE.md](LICENSE.md) for details.
 - Better error handling and user feedback
 - Sample configuration files
 - Developer-friendly project structure
-</file>
-
-<file path="scripts/git_commit.sh">
-#!/bin/bash
-# git_commit.sh - Commit and push changes to SSH Bookmark Manager repository
-# Usage: ./scripts/git_commit.sh "Your commit message"
-
-set -e
-
-# --- Settings ---
-GITHUB_USER="vordan"
-REPO_NAME="ssh-tray"
-# ---------------
-
-# Function: yes/no confirmation prompt with custom default
-function confirm() {
-	local prompt="$1"
-	local default="$2"  # "Y" or "N"
-	
-	if [[ "$default" == "N" ]]; then
-		prompt="$prompt [y/N]"
-	else
-		prompt="$prompt [Y/n]"
-	fi
-	
-	while true; do
-		read -r -p "$prompt " answer
-		case "$answer" in
-			[Yy][Ee][Ss]|[Yy]) return 0 ;;
-			[Nn][Oo]|[Nn]) return 1 ;;
-			"") 
-				if [[ "$default" == "N" ]]; then
-					return 1  # Default No
-				else
-					return 0  # Default Yes
-				fi
-				;;
-			*) echo "Please answer y or n." ;;
-		esac
-	done
-}
-
-# Check for commit message or prompt for one
-if [[ -z "$1" ]]; then
-	echo "No commit message provided."
-	echo
-	read -r -p "Enter commit message: " COMMIT_MSG
-	
-	# Check if user provided a message
-	if [[ -z "$COMMIT_MSG" ]]; then
-		echo "Error: Commit message cannot be empty."
-		echo
-		echo "Usage: $0 \"commit message\""
-		echo
-		echo "Examples:"
-		echo "  $0 \"Fix terminal detection bug\""
-		echo "  $0 \"Add support for new terminal emulator\""
-		echo "  $0 \"Update documentation and README\""
-		exit 1
-	fi
-else
-	COMMIT_MSG="$1"
-fi
-
-echo "==============================================================================="
-echo "SSH Bookmark Manager - Git Commit & Push"
-echo "==============================================================================="
-echo
-
-# Auto-detect project root directory and change to it
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-if [[ "$(basename "$SCRIPT_DIR")" == "scripts" ]]; then
-	# Running from scripts/ directory, go up one level
-	PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
-	echo "Detected running from scripts/ directory, changing to project root..."
-	cd "$PROJECT_ROOT"
-fi
-
-# Check if we're in a git repository
-if [[ ! -d ".git" ]]; then
-	echo "ERROR: Not in a git repository."
-	echo "Current directory: $(pwd)"
-	echo "If this is a new project, run ./scripts/git_init.sh first."
-	exit 1
-fi
-
-# Verify we're in the right project (should have src/ and scripts/)
-if [[ ! -d "src" || ! -d "scripts" ]]; then
-	echo "ERROR: Cannot find SSH Bookmark Manager project structure."
-	echo "Expected to find src/ and scripts/ directories."
-	echo "Current directory: $(pwd)"
-	exit 1
-fi
-
-echo "Working in project directory: $(pwd)"
-
-# Check if we have the correct remote
-REMOTE_URL=$(git remote get-url origin 2>/dev/null || echo "")
-EXPECTED_URL="https://github.com/$GITHUB_USER/$REPO_NAME.git"
-
-if [[ "$REMOTE_URL" != "$EXPECTED_URL" ]]; then
-	echo "WARNING: Remote origin URL doesn't match expected repository."
-	echo "Current: $REMOTE_URL"
-	echo "Expected: $EXPECTED_URL"
-	echo
-	if ! confirm "Continue anyway?" "N"; then
-		echo "Aborted by user."
-		exit 1
-	fi
-fi
-
-# Show git status
-echo "Current repository status:"
-MODIFIED_COUNT=$(git status --porcelain | wc -l)
-NEW_FILES=$(git status --porcelain | grep "^??" | wc -l)
-STAGED_COUNT=$(git status --porcelain | grep "^[AMDR]" | wc -l)
-
-echo "  Modified/Deleted: $(($MODIFIED_COUNT - $NEW_FILES))"
-echo "  New files: $NEW_FILES"
-echo "  Already staged: $STAGED_COUNT"
-echo
-
-# Show changes summary
-if [[ $MODIFIED_COUNT -eq 0 ]]; then
-	echo "No changes to commit."
-	exit 0
-fi
-
-echo "Files that will be added/committed:"
-git status --short
-echo
-
-# Confirm commit
-echo "Commit message: \"$COMMIT_MSG\""
-echo
-if ! confirm "Review changes and continue with commit and push?" "Y"; then
-	echo "Aborted by user."
-	exit 1
-fi
-
-# Optional: Show detailed diff (default: No)
-echo
-if confirm "Show detailed diff before committing?" "N"; then
-	echo
-	echo "==============================================================================="
-	echo "DIFF PREVIEW:"
-	echo "==============================================================================="
-	git diff HEAD 2>/dev/null || git diff --cached 2>/dev/null || git diff
-	echo "==============================================================================="
-	echo
-	if ! confirm "Proceed with commit after reviewing diff?" "Y"; then
-		echo "Aborted by user."
-		exit 1
-	fi
-fi
-
-echo "Adding all changes (including new files and folders)..."
-git add .
-
-# Show what will be committed
-echo "Files to be committed:"
-git diff --cached --name-status
-
-echo "Committing changes..."
-git commit -m "$COMMIT_MSG"
-
-echo "Pushing to GitHub..."
-git push
-
-echo
-echo "==============================================================================="
-echo "✓ SUCCESS: Changes committed and pushed to GitHub!"
-echo "==============================================================================="
-echo
-echo "Commit: $COMMIT_MSG"
-echo "Repository: https://github.com/$GITHUB_USER/$REPO_NAME"
-echo
-echo "View changes:"
-echo "  - On GitHub: https://github.com/$GITHUB_USER/$REPO_NAME/commits"
-echo "  - Locally: git log --oneline -10"
-echo
 </file>
 
 </files>
