@@ -191,9 +191,9 @@ ssh_tray/
 ├── archive
 │   └── ssh_tray.old.py
 ├── config
-│   ├── ssh_bookmarks.sample.txt
-│   ├── ssh_tray_config.sample.txt
-│   └── ssh_tray_uninstall.desktop
+│   ├── ssh-bookmarks.sample.txt
+│   ├── ssh-tray-config.sample.txt
+│   └── ssh-tray-uninstall.desktop
 ├── install.sh
 ├── repomix.config.json
 ├── scripts
@@ -205,10 +205,14 @@ ssh_tray/
 ├── src
 │   ├── ssh_tray
 │   │   ├── __init__.py
+│   │   ├── __pycache__
 │   │   ├── configuration.py
+│   │   ├── constants.py
+│   │   ├── dialogs.py
 │   │   ├── editor.py
 │   │   ├── main.py
-│   │   └── system.py
+│   │   ├── system.py
+│   │   └── widgets.py
 │   └── ssh_tray.py
 ├── ssh-tray-repomix-output.xml
 ├── ssh-tray-start.sh
