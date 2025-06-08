@@ -9,30 +9,55 @@ GITHUB_USER="vordan"
 REPO_NAME="ssh-tray"
 # ---------------
 
-# Function: yes/no confirmation prompt
+# Function: yes/no confirmation prompt with custom default
 function confirm() {
+	local prompt="$1"
+	local default="$2"  # "Y" or "N"
+	
+	if [[ "$default" == "N" ]]; then
+		prompt="$prompt [y/N]"
+	else
+		prompt="$prompt [Y/n]"
+	fi
+	
 	while true; do
-		read -r -p "$1 [Y/n] " answer
+		read -r -p "$prompt " answer
 		case "$answer" in
-			[Yy][Ee][Ss]|[Yy]|"") return 0 ;;
+			[Yy][Ee][Ss]|[Yy]) return 0 ;;
 			[Nn][Oo]|[Nn]) return 1 ;;
-			*) echo "Please answer Y or n." ;;
+			"") 
+				if [[ "$default" == "N" ]]; then
+					return 1  # Default No
+				else
+					return 0  # Default Yes
+				fi
+				;;
+			*) echo "Please answer y or n." ;;
 		esac
 	done
 }
 
-# Check for commit message
+# Check for commit message or prompt for one
 if [[ -z "$1" ]]; then
-	echo "Usage: $0 \"commit message\""
+	echo "No commit message provided."
 	echo
-	echo "Example:"
-	echo "  $0 \"Fix terminal detection bug\""
-	echo "  $0 \"Add support for new terminal emulator\""
-	echo "  $0 \"Update documentation and README\""
-	exit 1
+	read -r -p "Enter commit message: " COMMIT_MSG
+	
+	# Check if user provided a message
+	if [[ -z "$COMMIT_MSG" ]]; then
+		echo "Error: Commit message cannot be empty."
+		echo
+		echo "Usage: $0 \"commit message\""
+		echo
+		echo "Examples:"
+		echo "  $0 \"Fix terminal detection bug\""
+		echo "  $0 \"Add support for new terminal emulator\""
+		echo "  $0 \"Update documentation and README\""
+		exit 1
+	fi
+else
+	COMMIT_MSG="$1"
 fi
-
-COMMIT_MSG="$1"
 
 echo "==============================================================================="
 echo "SSH Bookmark Manager - Git Commit & Push"
@@ -75,7 +100,7 @@ if [[ "$REMOTE_URL" != "$EXPECTED_URL" ]]; then
 	echo "Current: $REMOTE_URL"
 	echo "Expected: $EXPECTED_URL"
 	echo
-	if ! confirm "Continue anyway?"; then
+	if ! confirm "Continue anyway?" "N"; then
 		echo "Aborted by user."
 		exit 1
 	fi
@@ -105,19 +130,22 @@ echo
 # Confirm commit
 echo "Commit message: \"$COMMIT_MSG\""
 echo
-if ! confirm "Review changes and continue with commit and push?"; then
+if ! confirm "Review changes and continue with commit and push?" "Y"; then
 	echo "Aborted by user."
 	exit 1
 fi
 
-# Optional: Show detailed diff
-if confirm "Show detailed diff before committing?"; then
+# Optional: Show detailed diff (default: No)
+echo
+if confirm "Show detailed diff before committing?" "N"; then
 	echo
 	echo "==============================================================================="
-	git diff --cached 2>/dev/null || git diff
+	echo "DIFF PREVIEW:"
+	echo "==============================================================================="
+	git diff HEAD 2>/dev/null || git diff --cached 2>/dev/null || git diff
 	echo "==============================================================================="
 	echo
-	if ! confirm "Proceed with commit?"; then
+	if ! confirm "Proceed with commit after reviewing diff?" "Y"; then
 		echo "Aborted by user."
 		exit 1
 	fi
