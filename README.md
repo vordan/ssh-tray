@@ -1,8 +1,8 @@
 # SSH Bookmark Manager
 
-**Author:** Vanco Ordanoski (<vordan@infoproject.biz>)  
-**Company:** Infoproject LLC, North Macedonia  
-**License:** MIT  
+**Author:** Vanco Ordanoski (<vordan@infoproject.biz>)
+**Company:** Infoproject LLC, North Macedonia
+**License:** MIT
 **Version:** 1.0.0
 
 ---
@@ -31,7 +31,7 @@ SSH Bookmark Manager is a Linux tray application for managing SSH bookmarks and 
 
 - **Operating System**: Linux (Ubuntu/Mint/Debian/Fedora/etc.)
 - **Python**: Python 3.x with GTK3 bindings
-- **Dependencies**: 
+- **Dependencies**:
   - `python3-gi` (GTK3 bindings)
   - `gir1.2-appindicator3-0.1` (AppIndicator3)
   - `python3-gi-cairo` (Cairo bindings)
@@ -57,7 +57,7 @@ sudo dnf install mate-terminal gnome-terminal xfce4-terminal xterm
 Download and install with a single command:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/vordan/ssh-tray/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/vordan/ssh-tray/main/install.sh | bash
 ```
 
 ### Manual Installation
@@ -183,33 +183,37 @@ Add to applications menu:
 ## Project Structure
 
 ```
-ssh-tray/
-├── src/
-│   ├── ssh_tray/
-│   │   ├── __init__.py           # Package initialization
-│   │   ├── main.py               # Main tray application
-│   │   ├── configuration.py      # Config and bookmark management
-│   │   ├── editor.py             # GUI editor dialogs
-│   │   └── system.py             # System integration
-│   └── ssh_tray.py               # Main launcher script
-├── scripts/
-│   ├── install.sh                # Installation script
-│   ├── uninstall.sh              # Uninstallation script
-│   ├── git_init.sh               # Repository initialization
-│   ├── git_commit.sh             # Git commit helper
-│   ├── github_cli_install.sh     # GitHub CLI installer
-│   └── make_ssh_tray_project.sh  # Development project creator
-├── config/
-│   ├── sample_ssh_bookmarks      # Example bookmarks file
-│   ├── sample_ssh_tray_config    # Example configuration
-│   └── ssh_tray_uninstall.desktop # Uninstaller desktop file
-├── archive/
-│   └── ssh_tray.old.py           # Previous monolithic version
-├── ssh-tray-start.sh             # Startup script for /opt installation
-├── repomix.config.json           # Code analysis configuration
-├── README.md                     # This file
-├── LICENSE.md                    # MIT License
-└── MAKE.md                       # Developer documentation
+ssh_tray/
+├── INSTALL.md
+├── LICENSE.md
+├── MAKE.md
+├── README.md
+├── archive
+│   └── ssh_tray.old.py
+├── config
+│   ├── ssh_bookmarks.sample.txt
+│   ├── ssh_tray_config.sample.txt
+│   └── ssh_tray_uninstall.desktop
+├── install.sh
+├── repomix.config.json
+├── scripts
+│   ├── git_commit.sh
+│   ├── git_init.sh
+│   ├── github_cli_install.sh
+│   ├── make_ssh_tray_project.sh
+│   └── uninstall.sh
+├── src
+│   ├── ssh_tray
+│   │   ├── __init__.py
+│   │   ├── configuration.py
+│   │   ├── editor.py
+│   │   ├── main.py
+│   │   └── system.py
+│   └── ssh_tray.py
+├── ssh-tray-repomix-output.xml
+├── ssh-tray-start.sh
+└── web
+    └── index.html
 ```
 
 ---
@@ -343,9 +347,9 @@ MIT License - see [LICENSE.md](LICENSE.md) for details.
 
 ## Contact
 
-**Developer:** Vanco Ordanoski  
-**Email:** vordan@infoproject.biz  
-**Company:** Infoproject LLC, North Macedonia  
+**Developer:** Vanco Ordanoski
+**Email:** vordan@infoproject.biz
+**Company:** Infoproject LLC, North Macedonia
 **Repository:** https://github.com/vordan/ssh-tray
 
 ---

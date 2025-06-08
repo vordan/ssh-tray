@@ -1,23 +1,28 @@
 """
-Bookmarks and configuration editor dialog for SSH Tray.
-Provides GUI for editing bookmarks, groups, terminal settings, and system integration options.
+===============================================================================
+ssh_tray.editor.py - Bookmarks and config dialog for SSH Tray
+Author: Vanco Ordanoski
+MIT License
+
+Dialog for editing bookmarks, groups, order, terminal, and system options.
+===============================================================================
 """
 
 import os
 from gi.repository import Gtk
 from .configuration import (
-	load_bookmarks, save_bookmarks, read_config_terminal, CONFIG_FILE
+   load_bookmarks, save_bookmarks, read_config_terminal, CONFIG_FILE
 )
 from .system import (
-	is_autostart_enabled, add_to_autostart, create_desktop_file, show_notification, available_terminals
+   is_autostart_enabled, add_to_autostart, create_desktop_file, show_notification, available_terminals
 )
 
 class EditBookmarksDialog(Gtk.Dialog):
 	"""Main editor dialog for bookmarks, configuration, and system integration."""
-	
+
 	def __init__(self, parent, bookmarks, terminal, on_change_callback):
 		"""Initialize the editor dialog with current bookmarks and settings.
-		
+
 		Args:
 			parent: Parent window for modal dialog
 			bookmarks: Current list of bookmarks
@@ -27,7 +32,7 @@ class EditBookmarksDialog(Gtk.Dialog):
 		Gtk.Dialog.__init__(self, title="Edit SSH Bookmarks and Configuration", transient_for=parent, modal=True)
 		self.set_border_width(20)
 		self.set_default_size(650, 500)
-		
+
 		# Store current state and callback
 		self.bookmarks = [list(item) for item in bookmarks]
 		self.terminal = terminal
@@ -47,13 +52,13 @@ class EditBookmarksDialog(Gtk.Dialog):
 
 		# Terminal selection section
 		self._create_terminal_section(box)
-		
+
 		# Bookmarks list editor section
 		self._create_bookmarks_section(box)
-		
+
 		# Action buttons section
 		self._create_action_buttons(box)
-		
+
 		# System integration options section
 		self._create_system_options(box)
 
@@ -63,7 +68,7 @@ class EditBookmarksDialog(Gtk.Dialog):
 		"""Create terminal emulator selection controls."""
 		term_box = Gtk.Box(spacing=6)
 		term_label = Gtk.Label(label="Terminal:")
-		
+
 		# Dropdown for common terminals
 		self.term_combo = Gtk.ComboBoxText()
 		for t in available_terminals():
@@ -71,26 +76,26 @@ class EditBookmarksDialog(Gtk.Dialog):
 		self.term_combo.set_active(
 			available_terminals().index(self.terminal)
 			if self.terminal in available_terminals() else -1)
-		
+
 		# Text entry for custom terminal commands
 		self.term_entry = Gtk.Entry()
 		self.term_entry.set_text(self.terminal)
 		self.term_combo.connect("changed", self.on_term_combo_changed)
-		
+
 		# Save terminal setting button
 		save_icon = Gtk.Image.new_from_icon_name("document-save", Gtk.IconSize.BUTTON)
 		save_btn = Gtk.Button()
 		save_btn.set_image(save_icon)
 		save_btn.set_tooltip_text("Save terminal")
 		save_btn.connect("clicked", self.on_save_terminal)
-		
+
 		# Help button for terminal information
 		help_icon = Gtk.Image.new_from_icon_name("help-about", Gtk.IconSize.BUTTON)
 		help_btn = Gtk.Button()
 		help_btn.set_image(help_icon)
 		help_btn.set_tooltip_text("Help: Supported terminals")
 		help_btn.connect("clicked", self.on_help_terminal)
-		
+
 		term_box.pack_start(term_label, False, False, 0)
 		term_box.pack_start(self.term_combo, False, False, 0)
 		term_box.pack_start(self.term_entry, True, True, 0)
@@ -104,16 +109,16 @@ class EditBookmarksDialog(Gtk.Dialog):
 		self.liststore = Gtk.ListStore(str, str)
 		for label, target in self.bookmarks:
 			self.liststore.append([label, target])
-		
+
 		self.treeview = Gtk.TreeView(model=self.liststore)
 		renderer_text = Gtk.CellRendererText()
-		
+
 		# Add columns for description and SSH target
 		column_label = Gtk.TreeViewColumn("Description / Group", renderer_text, text=0)
 		column_target = Gtk.TreeViewColumn("SSH Target", renderer_text, text=1)
 		self.treeview.append_column(column_label)
 		self.treeview.append_column(column_target)
-		
+
 		# Add scrolled window for the list
 		scrolled_window = Gtk.ScrolledWindow()
 		scrolled_window.set_border_width(5)
@@ -124,7 +129,7 @@ class EditBookmarksDialog(Gtk.Dialog):
 	def _create_action_buttons(self, box):
 		"""Create bookmark management action buttons."""
 		button_box = Gtk.Box(spacing=8)
-		
+
 		# Add bookmark button
 		self.add_btn = Gtk.Button(label="Add")
 		self.add_btn.set_image(Gtk.Image.new_from_icon_name("list-add", Gtk.IconSize.BUTTON))
@@ -174,21 +179,21 @@ class EditBookmarksDialog(Gtk.Dialog):
 	def _create_system_options(self, box):
 		"""Create system integration options (autostart and desktop file)."""
 		opt_box = Gtk.Box(spacing=8)
-		
+
 		# Autostart toggle switch
 		self.autostart_switch = Gtk.Switch()
 		self.autostart_switch.set_active(is_autostart_enabled())
 		self.autostart_switch.connect("notify::active", self.on_autostart_toggle)
 		opt_box.pack_start(Gtk.Label(label="Autostart:"), False, False, 0)
 		opt_box.pack_start(self.autostart_switch, False, False, 0)
-		
+
 		# Add to applications menu button
 		desktop_btn = Gtk.Button()
 		desktop_btn.set_image(Gtk.Image.new_from_icon_name("applications-internet", Gtk.IconSize.BUTTON))
 		desktop_btn.set_tooltip_text("Add to Menu (.desktop)")
 		desktop_btn.connect("clicked", self.on_add_to_menu)
 		opt_box.pack_start(desktop_btn, False, False, 0)
-		
+
 		box.pack_start(opt_box, False, False, 8)
 
 	def _save_and_refresh(self):
@@ -211,7 +216,7 @@ class EditBookmarksDialog(Gtk.Dialog):
 		if not terminal:
 			show_notification("Please enter a terminal command.", parent=self)
 			return
-		
+
 		# Write terminal setting to config file
 		with open(CONFIG_FILE, 'w') as f:
 			f.write(f'terminal={terminal}\n')
@@ -234,20 +239,20 @@ class EditBookmarksDialog(Gtk.Dialog):
 		dialog.set_border_width(20)
 		dialog.add_buttons(Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL,
 						   Gtk.STOCK_OK, Gtk.ResponseType.OK)
-		
+
 		box = dialog.get_content_area()
 		label_entry = Gtk.Entry()
 		label_entry.set_placeholder_text("Description")
 		target_entry = Gtk.Entry()
 		target_entry.set_placeholder_text("user@host[:port]")
-		
+
 		box.pack_start(Gtk.Label(label="Description:"), False, False, 0)
 		box.pack_start(label_entry, False, False, 0)
 		box.pack_start(Gtk.Label(label="SSH Target:"), False, False, 0)
 		box.pack_start(target_entry, False, False, 0)
 		box.set_border_width(20)
 		dialog.show_all()
-		
+
 		resp = dialog.run()
 		if resp == Gtk.ResponseType.OK:
 			label = label_entry.get_text().strip()
@@ -265,7 +270,7 @@ class EditBookmarksDialog(Gtk.Dialog):
 		if treeiter:
 			label_old = model[treeiter][0]
 			target_old = model[treeiter][1]
-			
+
 			if label_old == '__GROUP__':
 				# Edit group name
 				dialog = Gtk.Dialog(
@@ -373,4 +378,49 @@ class EditBookmarksDialog(Gtk.Dialog):
 				model.insert(index + 2, list(model[treeiter]))
 				model.remove(treeiter)
 				# Re-select the moved item
-				iter
+				iter_moved = model.get_iter(index + 1)
+				self.treeview.get_selection().select_iter(iter_moved)
+				self._save_and_refresh()
+
+	def get_bookmarks(self):
+		"""Get current bookmarks list from the tree view model.
+
+		Returns:
+			list: List of (label, target) tuples from the current model
+		"""
+		return [(row[0], row[1]) for row in self.liststore]
+
+	def on_add_to_menu(self, button):
+		"""Create desktop file and add application to system menu."""
+		# Find the main launcher script path dynamically
+		import sys
+
+		# Try to find ssh_tray.py launcher in common locations
+		possible_paths = [
+			'/opt/ssh-tray/src/ssh_tray.py',
+			'/usr/local/bin/ssh-tray',
+			os.path.join(os.path.dirname(sys.executable), 'ssh-tray'),
+		]
+
+		exec_path = None
+		for path in possible_paths:
+			if os.path.exists(path):
+				exec_path = path
+				break
+
+		# Fallback to current module location if not found
+		if not exec_path:
+			current_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+			exec_path = os.path.join(current_dir, 'ssh_tray.py')
+
+		create_desktop_file(exec_path)
+		show_notification("Added SSH Bookmark Manager to menu.", parent=self)
+
+	def on_autostart_toggle(self, switch, gparam):
+		"""Handle autostart toggle switch changes."""
+		if switch.get_active():
+			add_to_autostart(True)
+			show_notification("Autostart enabled.", parent=self)
+		else:
+			add_to_autostart(False)
+			show_notification("Autostart disabled.", parent=self)

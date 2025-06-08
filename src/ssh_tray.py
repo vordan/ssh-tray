@@ -38,6 +38,7 @@ def show_version():
 		# Add the parent directory to Python path to find the ssh_tray package
 		sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 		from ssh_tray import __version__, __author__, __company__
+
 		print(f"SSH Bookmark Manager v{__version__}")
 		print(f"Author: {__author__}")
 		print(f"Company: {__company__}")
@@ -50,7 +51,7 @@ def run_uninstaller():
 	"""Run the uninstaller script."""
 	# Find the uninstaller script
 	script_dir = os.path.dirname(os.path.abspath(__file__))
-	
+
 	# Try different possible locations for the uninstaller
 	possible_paths = [
 		os.path.join(script_dir, 'uninstall.sh'),
@@ -58,13 +59,13 @@ def run_uninstaller():
 		'/usr/local/bin/ssh-tray-uninstall',
 		'/opt/ssh-tray/uninstall.sh'
 	]
-	
+
 	uninstaller_path = None
 	for path in possible_paths:
 		if os.path.exists(path) and os.access(path, os.X_OK):
 			uninstaller_path = path
 			break
-	
+
 	if uninstaller_path:
 		print("Starting SSH Bookmark Manager uninstaller...")
 		try:
@@ -89,7 +90,7 @@ def main():
 	# Check for command-line arguments
 	if len(sys.argv) > 1:
 		arg = sys.argv[1].lower()
-		
+
 		if arg in ['--help', '-h', 'help']:
 			show_help()
 			return
@@ -103,16 +104,17 @@ def main():
 			print(f"Unknown argument: {sys.argv[1]}")
 			print("Use 'ssh-tray --help' for available options.")
 			sys.exit(1)
-	
+
 	# No arguments provided, start the main application
 	# Add the parent directory to Python path to find the ssh_tray package
 	sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 	try:
 		# Import and run the main application
-		from ssh_tray.main import main as app_main
+		import ssh_tray.main
+		app_main = ssh_tray.main.main
 		app_main()
-		
+
 	except ImportError as e:
 		print(f"Error importing SSH Tray modules: {e}")
 		print("Please ensure the ssh_tray package is properly installed.")

@@ -1,19 +1,18 @@
 """
-System integration module for SSH Tray.
-Handles terminal launching, autostart configuration, desktop file creation, and notifications.
+===============================================================================
+ssh_tray.system.py - System integration (autostart, desktop file, terminals)
+Author: Vanco Ordanoski
+MIT License
+
+Handles launching terminals, autostart, desktop integration, notifications, etc.
+===============================================================================
 """
 
 import os
 import shutil
 import subprocess
 
-# Icon name for the application (standard system icon)
 ICON_NAME = 'network-server'
-
-# System integration file paths
-DESKTOP_FILE = os.path.expanduser('~/.local/share/applications/ssh_tray.desktop')
-AUTOSTART_DIR = os.path.expanduser('~/.config/autostart')
-AUTOSTART_FILE = os.path.join(AUTOSTART_DIR, 'ssh_tray.desktop')
 
 def available_terminals():
 	"""Get list of supported terminal emulators available on the system.
@@ -92,6 +91,10 @@ def open_ssh_in_terminal(terminal, ssh_target, label):
 		
 	except Exception as e:
 		show_notification(f"Failed to launch terminal.\n{e}")
+
+DESKTOP_FILE = os.path.expanduser('~/.local/share/applications/ssh_tray.desktop')
+AUTOSTART_DIR = os.path.expanduser('~/.config/autostart')
+AUTOSTART_FILE = os.path.join(AUTOSTART_DIR, 'ssh_tray.desktop')
 
 def create_desktop_file(exec_path):
 	"""Create .desktop file for application menu integration.

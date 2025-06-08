@@ -1,30 +1,34 @@
 """
-Configuration and bookmarks management for SSH Tray.
-Handles reading/writing config files, bookmark validation, and help text display.
+===============================================================================
+ssh_tray.configuration.py - Configuration & bookmarks management for SSH Tray
+Author: Vanco Ordanoski
+MIT License
+
+Handles reading/writing config, bookmarks, validation, help text.
+===============================================================================
 """
 
 import os
 import shutil
 from .system import show_notification, available_terminals
 
-# Configuration file paths in user's home directory
 BOOKMARKS_FILE = os.path.expanduser('~/.ssh_bookmarks')
 CONFIG_FILE = os.path.expanduser('~/.ssh_tray_config')
 
 def ensure_config_files():
 	"""Create default configuration files if they don't exist.
-	
+
 	Returns:
 		bool: True if files were created (first run), False if they existed
 	"""
 	created = False
-	
+
 	# Create default terminal configuration
 	if not os.path.exists(CONFIG_FILE):
 		with open(CONFIG_FILE, 'w') as f:
 			f.write('terminal=mate-terminal\n')
 		created = True
-	
+
 	# Create example bookmarks file
 	if not os.path.exists(BOOKMARKS_FILE):
 		with open(BOOKMARKS_FILE, 'w') as f:
@@ -35,13 +39,13 @@ def ensure_config_files():
 			f.write('------ Production ------\n')
 			f.write('Prod DB\tadmin@192.168.1.5\n')
 		created = True
-	
+
 	return created
 
 def show_instructions(parent=None):
 	"""Display help dialog with usage instructions and file locations."""
 	from gi.repository import Gtk
-	
+
 	text = (
 		"SSH Bookmark Manager Help\n\n"
 		"Bookmarks: {}\n"
@@ -55,7 +59,7 @@ def show_instructions(parent=None):
 		" - Use the tray icon to launch SSH, edit bookmarks, show help, or configure autostart.\n"
 		" - For menu or autostart integration, see configuration in the tray menu."
 	).format(BOOKMARKS_FILE, CONFIG_FILE)
-	
+
 	dialog = Gtk.MessageDialog(
 		parent=parent, modal=True, message_type=Gtk.MessageType.INFO,
 		buttons=Gtk.ButtonsType.OK, text="SSH Bookmark Manager - Instructions")
@@ -69,12 +73,12 @@ def show_instructions(parent=None):
 
 def read_config_terminal():
 	"""Read terminal emulator setting from configuration file.
-	
+
 	Returns:
 		str: Terminal command name or path, defaults to available terminal if configured one is missing
 	"""
 	terminal = 'mate-terminal'
-	
+
 	# Read terminal setting from config file
 	if os.path.exists(CONFIG_FILE):
 		with open(CONFIG_FILE) as f:
@@ -85,7 +89,7 @@ def read_config_terminal():
 					if val:
 						terminal = val
 					break
-	
+
 	# Validate terminal exists and is executable
 	if not (os.path.isabs(terminal) and os.access(terminal, os.X_OK)) and shutil.which(terminal) is None:
 		show_notification(f"Terminal '{terminal}' not found in PATH.\nPlease select or set a valid terminal in the configuration.")
@@ -94,28 +98,28 @@ def read_config_terminal():
 			terminal = avail[0]
 		else:
 			terminal = 'xterm'
-	
+
 	return terminal
 
 def validate_bookmark_line(line):
 	"""Parse and validate a single bookmark file line.
-	
+
 	Args:
 		line (str): Line from bookmarks file
-		
+
 	Returns:
 		tuple or None: (label, target) for bookmarks, ('__GROUP__', name) for groups, None for invalid/comments
 	"""
 	line = line.strip()
-	
+
 	# Skip empty lines and comments
 	if not line or line.startswith('#'):
 		return None
-	
+
 	# Check for group header (lines with dashes)
 	if line.startswith('-') and line.endswith('-') and len(line) > 3:
 		return ('__GROUP__', line.strip('- ').strip())
-	
+
 	# Parse bookmark line (description and SSH target separated by whitespace)
 	parts = line.rsplit(None, 1)
 	if len(parts) == 2:
@@ -123,18 +127,18 @@ def validate_bookmark_line(line):
 		# Validate SSH target contains username@host
 		if '@' in ssh_target:
 			return (label, ssh_target)
-	
+
 	return None
 
 def load_bookmarks():
 	"""Load and validate bookmarks from the bookmarks file.
-	
+
 	Returns:
 		list: List of (label, target) tuples for valid bookmarks and groups
 	"""
 	bookmarks = []
 	errors = []
-	
+
 	if os.path.exists(BOOKMARKS_FILE):
 		with open(BOOKMARKS_FILE, 'r') as f:
 			for idx, line in enumerate(f):
@@ -144,16 +148,16 @@ def load_bookmarks():
 				elif line.strip() and not line.strip().startswith('#'):
 					# Track invalid non-comment lines
 					errors.append(f"Line {idx+1}: '{line.strip()}'")
-	
+
 	# Show validation errors if any
 	if errors:
 		show_notification("Invalid lines in bookmarks file:\n" + "\n".join(errors))
-	
+
 	return bookmarks
 
 def save_bookmarks(bookmarks):
 	"""Save bookmarks list to the bookmarks file.
-	
+
 	Args:
 		bookmarks (list): List of (label, target) tuples to save
 	"""
