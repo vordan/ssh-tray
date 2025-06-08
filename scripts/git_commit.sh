@@ -83,16 +83,22 @@ fi
 
 # Show git status
 echo "Current repository status:"
-echo "$(git status --porcelain | wc -l) files changed"
+MODIFIED_COUNT=$(git status --porcelain | wc -l)
+NEW_FILES=$(git status --porcelain | grep "^??" | wc -l)
+STAGED_COUNT=$(git status --porcelain | grep "^[AMDR]" | wc -l)
+
+echo "  Modified/Deleted: $(($MODIFIED_COUNT - $NEW_FILES))"
+echo "  New files: $NEW_FILES"
+echo "  Already staged: $STAGED_COUNT"
 echo
 
 # Show changes summary
-if [[ $(git status --porcelain | wc -l) -eq 0 ]]; then
+if [[ $MODIFIED_COUNT -eq 0 ]]; then
 	echo "No changes to commit."
 	exit 0
 fi
 
-echo "Changed files:"
+echo "Files that will be added/committed:"
 git status --short
 echo
 
@@ -117,8 +123,12 @@ if confirm "Show detailed diff before committing?"; then
 	fi
 fi
 
-echo "Adding all changes..."
+echo "Adding all changes (including new files and folders)..."
 git add .
+
+# Show what will be committed
+echo "Files to be committed:"
+git diff --cached --name-status
 
 echo "Committing changes..."
 git commit -m "$COMMIT_MSG"
