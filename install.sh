@@ -69,6 +69,16 @@ sudo chmod +x "$INSTALL_DIR/$MAIN_LAUNCHER"
 sudo find "$INSTALL_DIR/src" -name "*.py" -exec sudo chmod +x {} \;
 sudo find "$INSTALL_DIR/scripts" -name "*.sh" -exec sudo chmod +x {} \;
 
+# Copy and setup uninstaller
+echo "Setting up uninstaller..."
+sudo cp "$INSTALL_DIR/scripts/uninstall.sh" "$INSTALL_DIR/"
+sudo chmod +x "$INSTALL_DIR/uninstall.sh"
+
+# Create uninstaller symlink
+UNINSTALL_SYMLINK="/usr/local/bin/ssh-tray-uninstall"
+sudo ln -sf "$INSTALL_DIR/uninstall.sh" "$UNINSTALL_SYMLINK"
+echo "Created uninstaller symlink $UNINSTALL_SYMLINK -> $INSTALL_DIR/uninstall.sh"
+
 # Create the starter script
 sudo tee "$INSTALL_DIR/$STARTER_SH" > /dev/null <<EOF2
 #!/bin/bash
@@ -89,15 +99,23 @@ echo
 echo "You can now start SSH Bookmark Manager with:"
 echo "    $BIN_NAME"
 echo
+echo "Available commands:"
+echo "    $BIN_NAME                Start the tray application"
+echo "    $BIN_NAME --help         Show help and usage information"
+echo "    $BIN_NAME --version      Show version information"
+echo "    $BIN_NAME --uninstall    Uninstall the application"
+echo "    ssh-tray-uninstall       Direct uninstaller access"
+echo
 echo "The application will create configuration files in your home directory:"
 echo "    ~/.ssh_bookmarks     (your SSH bookmarks)"
 echo "    ~/.ssh_tray_config   (terminal preferences)"
 echo
 echo "To edit bookmarks/config, use the tray menu when the app is running."
 echo
-echo "To uninstall, run:"
-echo "    sudo rm -rf \"$INSTALL_DIR\""
-echo "    sudo rm -f \"$LINK_TARGET\""
+echo "To uninstall, you can use any of these methods:"
+echo "    $BIN_NAME --uninstall"
+echo "    ssh-tray-uninstall"
+echo "    $INSTALL_DIR/uninstall.sh"
 echo
 echo "See README.md at $INSTALL_DIR for more information."
 
