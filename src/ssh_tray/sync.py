@@ -13,217 +13,239 @@ import warnings
 warnings.filterwarnings('ignore')  # Suppress all warnings
 
 import os
+import json
+import socket
 import requests
+import subprocess
+from datetime import datetime
+from typing import Dict, Any, Optional, Tuple
 from .configuration import BOOKMARKS_FILE, CONFIG_FILE
 from .system import show_notification
 
-SYNC_CONFIG_FILE = os.path.expanduser('~/.ssh-tray-sync')
+CONFIG_DIR = os.path.expanduser('~/.config/ssh-tray')
+SYNC_CONFIG_FILE = os.path.join(CONFIG_DIR, 'sync.json')
 USER_ID_FILE = '/opt/ssh-tray/.user_id'
 
-def get_sync_config():
-	"""Read sync configuration from file.
-
-	Returns:
-		dict: Sync configuration with server, port, user_id, enabled status
-	"""
-	config = {
-		'enabled': False,
-		'server': 'localhost',
-		'port': 9182,
-		'user_id': None
-	}
-
-	# Read main config for server settings
-	if os.path.exists(CONFIG_FILE):
-		try:
-			with open(CONFIG_FILE, 'r') as f:
-				for line in f:
-					line = line.strip()
-					if line.startswith('sync_server='):
-						config['server'] = line.split('=', 1)[1].strip()
-					elif line.startswith('sync_port='):
-						try:
-							config['port'] = int(line.split('=', 1)[1].strip())
-						except ValueError:
-							pass
-					elif line.startswith('sync_enabled='):
-						config['enabled'] = line.split('=', 1)[1].strip().lower() in ('true', '1', 'yes')
-		except Exception:
-			pass
-
-	# Read user ID from installation directory
-	if os.path.exists(USER_ID_FILE):
-		try:
-			with open(USER_ID_FILE, 'r') as f:
-				for line in f:
-					if line.startswith('user_id='):
-						config['user_id'] = line.split('=', 1)[1].strip()
-						break
-		except Exception:
-			pass
-
-	return config
-
-def save_sync_config(enabled, server, port):
-	"""Save sync configuration to main config file.
-
-	Args:
-		enabled (bool): Whether sync is enabled
-		server (str): Sync server hostname/IP
-		port (int): Sync server port
-	"""
-	# Read existing config
-	config_lines = []
-	if os.path.exists(CONFIG_FILE):
-		try:
-			with open(CONFIG_FILE, 'r') as f:
-				config_lines = f.readlines()
-		except Exception:
-			pass
-
-	# Update sync settings
-	sync_settings = {
-		'sync_enabled': str(enabled).lower(),
-		'sync_server': server,
-		'sync_port': str(port)
-	}
-
-	# Remove existing sync settings
-	config_lines = [line for line in config_lines
-	               if not any(line.strip().startswith(f'{key}=') for key in sync_settings.keys())]
-
-	# Add updated sync settings
-	for key, value in sync_settings.items():
-		config_lines.append(f'{key}={value}\n')
-
-	# Write updated config
+def get_system_id() -> str:
+	"""Get the system ID in the format username@hostname."""
 	try:
-		with open(CONFIG_FILE, 'w') as f:
-			f.writelines(config_lines)
+		username = subprocess.check_output(['whoami']).decode().strip()
+		hostname = socket.gethostname()
+		return f"{username}@{hostname}"
 	except Exception as e:
-		show_notification(f"Failed to save sync configuration: {e}")
+		print(f"Error getting system ID: {e}")
+		return "unknown-system"
 
-def is_sync_enabled():
-	"""Check if sync is enabled.
-
-	Returns:
-		bool: True if sync is enabled and properly configured
-	"""
-	config = get_sync_config()
-	return config['enabled'] and config['user_id'] is not None
-
-def upload_bookmarks():
-	"""Upload current bookmarks to sync server.
-
-	Returns:
-		str or None: Sync ID if successful, None if failed
-	"""
-	if not is_sync_enabled():
-		show_notification("Sync is not enabled or configured.")
-		return None
-
-	config = get_sync_config()
+def get_sync_config() -> Dict[str, Any]:
+	"""Get the sync configuration."""
+	if not os.path.exists(SYNC_CONFIG_FILE):
+		return {
+			'enabled': False,
+			'server': 'localhost',
+			'port': 9182,
+			'user_id': '',
+			'password': '',
+			'last_sync': None,
+			'system_id': get_system_id()
+		}
 
 	try:
-		# Read bookmarks file
-		if not os.path.exists(BOOKMARKS_FILE):
-			show_notification("No bookmarks file found to upload.")
-			return None
+		with open(SYNC_CONFIG_FILE, 'r') as f:
+			config = json.load(f)
+			# Add system_id if not present (for backward compatibility)
+			if 'system_id' not in config:
+				config['system_id'] = get_system_id()
+				save_sync_config(config)
+			return config
+	except Exception as e:
+		print(f"Error reading sync config: {e}")
+		return {
+			'enabled': False,
+			'server': 'localhost',
+			'port': 9182,
+			'user_id': '',
+			'password': '',
+			'last_sync': None,
+			'system_id': get_system_id()
+		}
 
-		with open(BOOKMARKS_FILE, 'r') as f:
-			content = f.read()
+def save_sync_config(config: Dict[str, Any]) -> None:
+	"""Save the sync configuration."""
+	os.makedirs(CONFIG_DIR, exist_ok=True)
+	with open(SYNC_CONFIG_FILE, 'w') as f:
+		json.dump(config, f, indent=2)
 
-		# Upload to server
-		url = f"http://{config['server']}:{config['port']}/upload"
-		headers = {'X-User-ID': config['user_id']}
+def is_sync_enabled() -> bool:
+	"""Check if sync is enabled and properly configured."""
+	config = get_sync_config()
+	return (
+		config.get('enabled', False) and
+		config.get('server') and
+		config.get('port') and
+		config.get('user_id') and
+		config.get('password') and
+		config.get('system_id')
+	)
 
-		response = requests.post(url, data=content, headers=headers, timeout=10)
+def check_slug(user_id: str, password: str) -> Tuple[bool, bool, str]:
+	"""Check if a slug exists and validate the password.
+
+	Returns:
+		Tuple[bool, bool, str]: (exists, authorized, error_message)
+	"""
+	config = get_sync_config()
+	server = config.get('server', 'localhost')
+	port = config.get('port', 9182)
+
+	try:
+		response = requests.post(
+			f'http://{server}:{port}/check-slug',
+			headers={
+				'X-User-ID': user_id,
+				'X-Password': password,
+				'X-System-ID': config.get('system_id', get_system_id())
+			}
+		)
 
 		if response.status_code == 200:
-			sync_id = response.text.strip()
-			show_notification(f"Bookmarks uploaded successfully!\nSync ID: {sync_id}")
-			return sync_id
+			data = response.json()
+			return data.get('exists', False), data.get('authorized', False), ''
 		else:
-			show_notification(f"Upload failed: {response.status_code} - {response.text}")
-			return None
-
-	except requests.exceptions.RequestException as e:
-		show_notification(f"Network error during upload: {e}")
-		return None
+			return False, False, response.text
 	except Exception as e:
-		show_notification(f"Error uploading bookmarks: {e}")
-		return None
+		return False, False, str(e)
 
-def download_bookmarks(sync_id):
-	"""Download bookmarks from sync server.
-
-	Args:
-		sync_id (str): Sync ID to download
+def change_password(user_id: str, old_password: str, new_password: str) -> Tuple[bool, str]:
+	"""Change the sync password.
 
 	Returns:
-		bool: True if successful, False if failed
+		Tuple[bool, str]: (success, error_message)
 	"""
-	if not is_sync_enabled():
-		show_notification("Sync is not enabled or configured.")
-		return False
-
 	config = get_sync_config()
-
-	# Validate sync ID format
-	if not sync_id or len(sync_id) != 8 or not all(c in '0123456789abcdef' for c in sync_id.lower()):
-		show_notification("Invalid sync ID format. Must be 8 hexadecimal characters.")
-		return False
+	server = config.get('server', 'localhost')
+	port = config.get('port', 9182)
 
 	try:
-		# Download from server
-		url = f"http://{config['server']}:{config['port']}/download/{sync_id.lower()}"
-		headers = {'X-User-ID': config['user_id']}
-
-		response = requests.get(url, headers=headers, timeout=10)
+		response = requests.post(
+			f'http://{server}:{port}/change-password',
+			headers={
+				'X-User-ID': user_id,
+				'X-Password': old_password,
+				'X-New-Password': new_password,
+				'X-System-ID': config.get('system_id', get_system_id())
+			}
+		)
 
 		if response.status_code == 200:
-			content = response.text
-
-			# Backup existing bookmarks
-			if os.path.exists(BOOKMARKS_FILE):
-				backup_file = f"{BOOKMARKS_FILE}.backup"
-				try:
-					with open(BOOKMARKS_FILE, 'r') as src, open(backup_file, 'w') as dst:
-						dst.write(src.read())
-				except Exception:
-					pass  # Backup failed, but continue
-
-			# Write new bookmarks
-			with open(BOOKMARKS_FILE, 'w') as f:
-				f.write(content)
-
-			show_notification("Bookmarks downloaded and applied successfully!")
-			return True
-		elif response.status_code == 404:
-			show_notification("Sync ID not found. Please check the ID and try again.")
-			return False
+			# Update local config with new password
+			config['password'] = new_password
+			save_sync_config(config)
+			return True, ''
 		else:
-			show_notification(f"Download failed: {response.status_code} - {response.text}")
-			return False
-
-	except requests.exceptions.RequestException as e:
-		show_notification(f"Network error during download: {e}")
-		return False
+			return False, response.text
 	except Exception as e:
-		show_notification(f"Error downloading bookmarks: {e}")
-		return False
+		return False, str(e)
 
-def test_sync_connection():
-	"""Test connection to sync server.
+def upload_bookmarks(bookmarks: Dict[str, Any]) -> Tuple[bool, str]:
+	"""Upload bookmarks to the sync server.
 
 	Returns:
-		bool: True if server is reachable, False otherwise
+		Tuple[bool, str]: (success, error_message)
 	"""
+	if not is_sync_enabled():
+		return False, "Sync is not enabled"
+
 	config = get_sync_config()
+	server = config.get('server', 'localhost')
+	port = config.get('port', 9182)
+	user_id = config.get('user_id', '')
+	password = config.get('password', '')
+	system_id = config.get('system_id', get_system_id())
 
 	try:
-		url = f"http://{config['server']}:{config['port']}/status"
-		response = requests.get(url, timeout=5)
-		return response.status_code == 200
-	except Exception:
-		return False
+		response = requests.post(
+			f'http://{server}:{port}/upload',
+			headers={
+				'X-User-ID': user_id,
+				'X-Password': password,
+				'X-System-ID': system_id,
+				'X-Timestamp': config.get('last_sync', '')
+			},
+			json=bookmarks
+		)
+
+		if response.status_code == 200:
+			data = response.json()
+			config['last_sync'] = data.get('timestamp')
+			save_sync_config(config)
+			return True, ''
+		elif response.status_code == 409:
+			# Handle conflict
+			data = response.json()
+			server_data = data.get('serverData', {})
+			server_timestamp = data.get('serverTimestamp')
+			server_system_id = data.get('serverSystemId')
+
+			# TODO: Implement conflict resolution UI
+			# For now, we'll just use the server's version
+			config['last_sync'] = server_timestamp
+			save_sync_config(config)
+			return True, f"Conflict resolved: Using version from {server_system_id}"
+		else:
+			return False, response.text
+	except Exception as e:
+		return False, str(e)
+
+def download_bookmarks() -> Tuple[Optional[Dict[str, Any]], str]:
+	"""Download bookmarks from the sync server.
+
+	Returns:
+		Tuple[Optional[Dict[str, Any]], str]: (bookmarks, error_message)
+	"""
+	if not is_sync_enabled():
+		return None, "Sync is not enabled"
+
+	config = get_sync_config()
+	server = config.get('server', 'localhost')
+	port = config.get('port', 9182)
+	user_id = config.get('user_id', '')
+	password = config.get('password', '')
+
+	try:
+		response = requests.get(
+			f'http://{server}:{port}/download/{user_id}',
+			headers={
+				'X-Password': password,
+				'X-System-ID': config.get('system_id', get_system_id())
+			}
+		)
+
+		if response.status_code == 200:
+			data = response.json()
+			config['last_sync'] = data.get('timestamp')
+			save_sync_config(config)
+			return data.get('data'), ''
+		else:
+			return None, response.text
+	except Exception as e:
+		return None, str(e)
+
+def test_connection() -> Tuple[bool, str]:
+	"""Test the connection to the sync server.
+
+	Returns:
+		Tuple[bool, str]: (success, error_message)
+	"""
+	config = get_sync_config()
+	server = config.get('server', 'localhost')
+	port = config.get('port', 9182)
+
+	try:
+		response = requests.get(f'http://{server}:{port}/status')
+		if response.status_code == 200:
+			data = response.json()
+			return True, f"Connected to sync server (v{data.get('version', 'unknown')})"
+		else:
+			return False, response.text
+	except Exception as e:
+		return False, f"Connection failed: {str(e)}"
